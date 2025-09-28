@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.pyc
+*.pyo
+
+# Virtual Environments
+venv/
+env/
+.env/
+*.env
+
+# IDEs and editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Tika server cache (if any)
+.tika/
+*.tika
+
+# Uvicorn / FastAPI run files
+*.pid
+
+# Node.js (if using frontend or JS tools)
+node_modules/
+dist/
+build/
+
+# Database / cache / temporary files
+*.sqlite3
+*.db
+*.bak
+*.swp
+
+# Coverage reports
+.coverage
+htmlcov/
+*.cover
+*.py,cover
+nosetests.xml
+coverage.xml
+*.pytest_cache/
+
+# Jupyter Notebooks checkpoints
+.ipynb_checkpoints/
