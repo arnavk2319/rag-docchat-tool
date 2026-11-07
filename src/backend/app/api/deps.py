@@ -1,15 +1,23 @@
-"""FastAPI dependencies: temporary header auth and app-wide services (ADR-0002 section 1).
+"""FastAPI dependencies: bearer auth (ADR-0003 section 5) and app-wide services (ADR-0002 section 1).
 
-TEMPORARY auth: any caller can claim any user id. Replace `current_user` only (JWT/cookie
-returning the same UserId); routers never read headers themselves. Tests use
+`current_user` returns the owner id; routers never read headers themselves. Tests use
 `app.dependency_overrides[current_user]` and may override the service getters.
 """
 
-import re
 from typing import Annotated, NewType
 
 from fastapi import Depends, Header, HTTPException, Request, Response
 
+from ..core.auth import (
+    KEY_PREFIX,
+    AuthError,
+    InMemoryKeyStore,
+    KeyStore,
+    Principal,
+    valid_id,
+    verify_api_key,
+    verify_token,
+)
 from ..core.config import get_settings
 from ..core.limits import GLOBAL_KEY, Lease, RateLimiter, SpendCapError, SpendLedger
 from ..services.ingestion import IngestionService
@@ -22,8 +30,6 @@ from ..store.spend import SqliteSpend
 
 UserId = NewType("UserId", str)
 
-MAX_USER_ID_LEN = 64
-_USER_ID = re.compile(r"[A-Za-z0-9_.@-]+")
 
 
 class ApiError(HTTPException):
@@ -36,12 +42,46 @@ class ApiError(HTTPException):
         self.code = code
 
 
-def current_user(x_user_id: Annotated[str | None, Header()] = None) -> UserId:
-    if x_user_id is None or not x_user_id.strip():
-        raise ApiError(401, "auth_required", "X-User-Id header is required")
-    if len(x_user_id) > MAX_USER_ID_LEN or not _USER_ID.fullmatch(x_user_id):
-        raise ApiError(401, "invalid_user_id", "X-User-Id is invalid")
-    return UserId(x_user_id)
+def get_key_store(request: Request) -> KeyStore:
+    st = request.app.state
+    if getattr(st, "key_store", None) is None:
+        st.key_store = InMemoryKeyStore()  # Postgres-backed store replaces this (T-026/T-029)
+    return st.key_store
+
+
+def _unauthorized() -> ApiError:
+    return ApiError(
+        401, "unauthorized", "Valid credentials are required", {"WWW-Authenticate": "Bearer"}
+    )
+
+
+def current_principal(
+    key_store: Annotated[KeyStore, Depends(get_key_store)],
+    authorization: Annotated[str | None, Header()] = None,
+    x_on_behalf_of: Annotated[str | None, Header()] = None,
+) -> Principal:
+    """Bearer user token, or `dck_` tenant API key + X-On-Behalf-Of. Uniform 401 on any failure."""
+    if not authorization:
+        raise _unauthorized()
+    scheme, _, cred = authorization.partition(" ")
+    cred = cred.strip()
+    if scheme.lower() != "bearer" or not cred:
+        raise _unauthorized()
+    secret = get_settings().auth_token_secret.get_secret_value()
+    try:
+        if cred.startswith(f"{KEY_PREFIX}_"):
+            if not x_on_behalf_of or not valid_id(x_on_behalf_of):
+                raise AuthError
+            tenant = verify_api_key(key_store, cred, secret)
+            return Principal(tenant_id=tenant, owner_id=x_on_behalf_of)
+        return verify_token(cred, secret)
+    except AuthError:
+        raise _unauthorized() from None
+
+
+def current_user(principal: Annotated[Principal, Depends(current_principal)]) -> UserId:
+    # Tenant scoping of data arrives with the tenancy tickets; owner id is the isolation key now.
+    return UserId(principal.owner_id)
 
 
 def get_registry(request: Request) -> Registry:

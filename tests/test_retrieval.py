@@ -7,6 +7,7 @@ from app.services.retrieval import hybrid_search, rrf
 from app.store.bm25 import Bm25Store
 from app.store.chroma import ChromaStore
 from app.store.registry import SqliteRegistry
+from authutil import bearer
 from fastapi.testclient import TestClient
 
 EMB = FakeEmbedder()
@@ -115,7 +116,7 @@ async def test_ingest_indexes_and_delete_removes(tmp_path):
 
 
 def test_restart_gives_same_hits(tmp_path, monkeypatch):
-    h = {"X-User-Id": "alice"}
+    h = bearer("alice")
     files = [("files", ("n.txt", b"The zebra crossing zanzibar protocol is fascinating.", "text/plain"))]
 
     def ask(c):

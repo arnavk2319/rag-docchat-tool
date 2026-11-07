@@ -12,6 +12,7 @@ from app.core import models
 from app.core.concurrency import run_blocking
 from app.core.config import get_settings
 from app.utilities import file_handler as fh
+from authutil import bearer
 from fastapi.testclient import TestClient
 
 
@@ -132,7 +133,7 @@ def test_upload_parse_error_is_reported_per_file(monkeypatch):
         r = c.post(
             "/v1/documents",
             files={"files": ("a.pdf", b"%PDF-1.4 junk", "application/pdf")},
-            headers={"X-User-Id": "u1"},
+            headers=bearer("u1"),
         )
         res = r.json()["results"][0]
         assert r.status_code == 200 and res["ok"] is False and res["error"]["code"] == "parse_error"

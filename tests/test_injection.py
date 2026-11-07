@@ -23,6 +23,7 @@ from app.services.agent.tools import TOOLS, ToolContext
 from app.store.chroma import Hit
 from app.store.parents import Parent, SqliteParents
 from app.store.registry import SqliteRegistry
+from authutil import bearer
 
 FIX = Path(__file__).parent / "fixtures"
 PAYLOADS = sorted(FIX.glob("injection_*.txt"))
@@ -313,7 +314,7 @@ def test_summarize_and_query_responses_sanitised():
     from fastapi.testclient import TestClient
     summarization.clear_cache()
     with TestClient(app, raise_server_exceptions=False) as c:
-        h = {"X-User-Id": "alice"}
+        h = bearer("alice")
         did = c.post("/v1/documents", files=[("files", ("a.txt", b"The sky is blue."))],
                      headers=h).json()["results"][0]["doc_id"]
         llm.mock_script("S ![i](https://evil.example/p) <b>x</b> R&D")

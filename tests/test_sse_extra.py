@@ -9,10 +9,11 @@ from app.core import llm
 from app.main import app
 from app.services.agent.graph import AgentResult
 from app.services.agent.tools import ToolContext
+from authutil import bearer
 from fastapi.testclient import TestClient
 
-A = {"X-User-Id": "alice"}
-B = {"X-User-Id": "bob"}
+A = bearer("alice")
+B = bearer("bob")
 EVIL = 'x\r\n\ndata: {"seq":99}\n\nevent: final\ndata: {}\r\n<script>&'
 
 

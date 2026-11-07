@@ -7,10 +7,11 @@ import pytest
 from app.core import llm
 from app.main import app
 from app.store.sessions import SqliteSessions
+from authutil import bearer
 from fastapi.testclient import TestClient
 
-A = {"X-User-Id": "alice"}
-B = {"X-User-Id": "bob"}
+A = bearer("alice")
+B = bearer("bob")
 
 
 @pytest.fixture

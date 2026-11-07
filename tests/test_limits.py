@@ -9,10 +9,11 @@ from app.core import llm
 from app.core.limits import RateLimiter, SpendCapError, SpendLedger
 from app.main import app
 from app.store.spend import SqliteSpend
+from authutil import bearer
 from fastapi.testclient import TestClient
 
-A = {"X-User-Id": "alice"}
-B = {"X-User-Id": "bob"}
+A = bearer("alice")
+B = bearer("bob")
 J = llm.mock_script
 
 
@@ -333,7 +334,7 @@ def test_global_rate_limit_and_spend_codes(monkeypatch):
         doc(c)  # uploads are not limited
         assert c.post("/v1/query", json={"question": "q"}, headers=A).status_code == 200
         assert c.post("/v1/query", json={"question": "q"}, headers=B).status_code == 200
-        r = c.post("/v1/query", json={"question": "q"}, headers={"X-User-Id": "carol"})
+        r = c.post("/v1/query", json={"question": "q"}, headers=bearer("carol"))
         assert r.status_code == 429 and r.json()["code"] == "global_rate_limited"
         assert int(r.headers["retry-after"]) >= 1
 

@@ -7,10 +7,11 @@ from app.main import app
 from app.services.parent_lookup import ParentHit
 from app.services.rerank import rerank_parents
 from app.store.parents import Parent
+from authutil import bearer
 from fastapi.testclient import TestClient
 
-A = {"X-User-Id": "alice"}
-B = {"X-User-Id": "bob"}
+A = bearer("alice")
+B = bearer("bob")
 INV = b"The invoice number is INV-4471 and payment is due in thirty days."
 
 

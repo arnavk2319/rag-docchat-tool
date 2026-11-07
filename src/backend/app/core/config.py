@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     api_key: SecretStr = Field(
         default=SecretStr(""), validation_alias="ANTHROPIC_API_KEY"
     )
+    auth_token_secret: SecretStr = SecretStr("")  # env AUTH_TOKEN_SECRET (>=32 bytes); empty = all auth fails
     llm_provider: str = "mock"  # validated by core.llm (Anthropic | ollama | mock)
     agent_model: str = "claude-sonnet-5-5"
     fast_model: str = "claude-haiku-5-5"
