@@ -58,12 +58,19 @@ class Settings(BaseSettings):
     session_max_tokens: int = Field(default=2000, ge=100)  # env SESSION_MAX_TOKENS
     session_ttl_hours: float = Field(default=24.0, gt=0)  # env SESSION_TTL_HOURS (idle)
 
+    cors_allow_origins: str = ""  # env CORS_ALLOW_ORIGINS, comma-separated exact origins; empty = no CORS
+    enable_docs: bool = False  # env ENABLE_DOCS: /docs, /redoc, /openapi.json (+ detailed /healthz); off by default
+
     # Non-env: price table (USD per 1M tokens) and transport defaults.
     prices: dict[str, tuple[float, float]] = Field(
         default_factory=lambda: dict(DEFAULT_PRICES)
     )
     llm_timeout_s: float = Field(default=30.0, gt=0)
     llm_max_retries: int = Field(default=3, ge=0, le=10)
+
+
+def cors_origins(settings: "Settings") -> list[str]:
+    return [o.strip().rstrip("/") for o in settings.cors_allow_origins.split(",") if o.strip() and o.strip() != "*"]
 
 
 @lru_cache

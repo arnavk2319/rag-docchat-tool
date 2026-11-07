@@ -7,6 +7,7 @@ import pytest
 os.environ["LLM_PROVIDER"] = "mock"
 os.environ["MODELS_FAKE"] = "1"
 os.environ["AUTH_TOKEN_SECRET"] = "test-fixture-secret-0123456789-abcdefghij"
+os.environ["ENABLE_DOCS"] = "true"
 os.environ.pop("ANTHROPIC_API_KEY", None)
 
 _LOCAL = {"localhost", "127.0.0.1", "::1", ""}

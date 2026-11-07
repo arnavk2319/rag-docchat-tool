@@ -2,13 +2,14 @@ import tracemalloc
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.exceptions import HTTPException
 
 from .api import documents, query, sessions, summarize
 from .api.deps import ApiError
 from .api.errors import http_error, install_error_handlers
 from .core.concurrency import run_blocking
-from .core.config import get_settings
+from .core.config import cors_origins, get_settings
 from .core.limits import RateLimiter, SpendLedger
 from .core.llm import validate_provider
 from .core.models import load_models, models_fake, models_loaded, reset_models
@@ -112,11 +113,11 @@ async def lifespan(app: FastAPI):
     logger.info("App now shutting down")
 
 
-app = FastAPI(lifespan=lifespan)
-app.include_router(documents.router)
-app.include_router(summarize.router)
-app.include_router(query.router)
-app.include_router(sessions.router)
+_DESCRIPTION = (
+    "DocChat RAG API. All business routes live under /v1 and need `Authorization: Bearer <token>`. "
+    "Errors are `{detail, code}`. `POST /v1/query` with `stream=true` replies as Server-Sent Events "
+    "(`text/event-stream`, `Cache-Control: no-cache`, `X-Accel-Buffering: no`)."
+)
 
 
 async def http_exception_handle_logging(request, exc: HTTPException):
@@ -126,15 +127,45 @@ async def http_exception_handle_logging(request, exc: HTTPException):
     return http_error(exc)
 
 
-install_error_handlers(app, http_exception_handle_logging)
+def create_app() -> FastAPI:
+    settings = get_settings()
+    docs = settings.enable_docs
+    application = FastAPI(
+        title="DocChat RAG", version="1", description=_DESCRIPTION, lifespan=lifespan,
+        docs_url="/docs" if docs else None,
+        redoc_url="/redoc" if docs else None,
+        openapi_url="/openapi.json" if docs else None,
+    )
+    origins = cors_origins(settings)
+    if origins:  # bearer tokens, not cookies: no credentials, so an allow-list is safe
+        application.add_middleware(
+            CORSMiddleware, allow_origins=origins, allow_credentials=False,
+            allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+            allow_headers=["Authorization", "Content-Type"], max_age=600,
+            expose_headers=["Retry-After"],
+        )
+    application.include_router(documents.router)
+    application.include_router(summarize.router)
+    application.include_router(query.router)
+    application.include_router(sessions.router)
+    install_error_handlers(application, http_exception_handle_logging)
+
+    @application.get("/health", tags=["health"])
+    def health():
+        return {"status": "ok"}  # liveness only: no DB, no LLM, no auth
+
+    @application.get("/healthz", tags=["health"], include_in_schema=False)
+    def healthz():
+        if not get_settings().enable_docs:  # H-5: no internals in prod
+            return {"status": "ok"}
+        return {"models_loaded": models_loaded(), "fake": models_fake()}
+
+    @application.get("/ping-checkpoint", tags=["health"], include_in_schema=False)
+    def ping_checkpoint():
+        logger.info("Checking endpoint status")
+        return "Returning OK 200"
+
+    return application
 
 
-@app.get("/healthz", tags=["health"])
-def healthz():
-    return {"models_loaded": models_loaded(), "fake": models_fake()}
-
-
-@app.get("/ping-checkpoint", tags=["health"])
-def ping_checkpoint():
-    logger.info("Checking endpoint status")
-    return "Returning OK 200"
+app = create_app()

@@ -48,7 +48,13 @@ IDK = "I don't know."
     "/query",
     response_model=QueryResponse,
     dependencies=[Depends(json_body_limit)],
+    description=(
+        "Answer a question with citations. With `stream=true` the response is Server-Sent Events "
+        "(`text/event-stream`, `Cache-Control: no-cache`, `X-Accel-Buffering: no`)."
+    ),
     responses={
+        200: {"content": {"text/event-stream": {"schema": {"type": "string"}}},
+              "description": "JSON answer, or an SSE event stream when `stream=true`"},
         401: {"model": ErrorBody},
         404: {"model": ErrorBody},
         409: {"model": ErrorBody},
