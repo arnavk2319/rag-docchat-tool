@@ -55,3 +55,11 @@ coverage.xml
 
 # Jupyter Notebooks checkpoints
 .ipynb_checkpoints/
+
+# local reference copy of the agent framework
+agentic-kit/
+
+# Local state and agent run data
+chroma_db/
+logs/
+worktrees/

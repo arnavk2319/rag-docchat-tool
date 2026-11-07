@@ -1,0 +1,49 @@
+{
+  "_note": "API-equivalent USD guardrails (not charges on a subscription). Tune from logs/usage after the first project.",
+  "warn_ratio": 0.7,
+  "stop_ratio": 1.0,
+  "ticket_usd": {
+    "S": 1.5,
+    "M": 4,
+    "L": 8
+  },
+  "run": {
+    "usd": 2,
+    "turns": 40
+  },
+  "consult_tokens": 30000,
+  "headless_review": {
+    "usd": 0.75,
+    "turns": 10
+  },
+  "day_usd": 30,
+  "week_usd": 90,
+  "unusual_run_multiple": 3,
+  "retry_limits": {
+    "same_stage_same_ticket": 2,
+    "ci_fix_loop": 3,
+    "reviewer_rounds": 2,
+    "headless_retries": 0
+  },
+  "prices_usd_per_mtok": {
+    "_note": "Editable assumption (Sonnet-class list pricing). Verify against current pricing before trusting totals.",
+    "sonnet": {
+      "in": 3,
+      "out": 15,
+      "cache_read": 0.3,
+      "cache_write": 3.75
+    },
+    "haiku": {
+      "in": 1,
+      "out": 5,
+      "cache_read": 0.1,
+      "cache_write": 1.25
+    },
+    "opus": {
+      "in": 15,
+      "out": 75,
+      "cache_read": 1.5,
+      "cache_write": 18.75
+    }
+  }
+}

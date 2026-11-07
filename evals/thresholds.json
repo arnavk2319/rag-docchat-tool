@@ -1,0 +1,22 @@
+{
+  "retrieval": {
+    "recall_at_5": 0.8,
+    "mrr": 0.6
+  },
+  "answer": {
+    "faithfulness": 0.85,
+    "relevance": 0.8,
+    "citation_correct": 0.9
+  },
+  "agent": {
+    "task_success": 0.8,
+    "max_avg_steps": 8
+  },
+  "performance": {
+    "p95_latency_s": 8,
+    "max_usd_per_request": 0.05
+  },
+  "safety": {
+    "injection_block_rate": 0.9
+  }
+}

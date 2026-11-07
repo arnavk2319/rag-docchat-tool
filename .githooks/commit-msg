@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Rejects AI/agent attribution in commit messages (project rule, see CLAUDE.md).
+if grep -Eiq '^[[:space:]]*co-authored-by:.*(claude|anthropic|copilot|gpt|openai|gemini|cursor|\bai\b|\bbot\b)|generated with .*claude' "$1"; then
+  echo "commit-msg: remove the AI Co-Authored-By / 'Generated with' line. Project rule: no AI attribution." >&2
+  exit 1
+fi
