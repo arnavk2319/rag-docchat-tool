@@ -1,6 +1,6 @@
 # Status (rolling, max 60 lines; orchestrator rewrites after every stage)
 
-Updated: 2026-11-07 · Mode: autopilot · Phase: P0 (foundation) finishing, P1 starting
+Updated: 2026-11-07 · Mode: autopilot · Phase: PAUSED at day budget cap after T-007 (P0: 8 of 9 done)
 
 ## Decisions made
 - Spec (docs/spec.md): P0-P4 backend only. Later items in docs/backlog.md.
@@ -10,12 +10,12 @@ Updated: 2026-11-07 · Mode: autopilot · Phase: P0 (foundation) finishing, P1 s
 - No Anthropic key; build and all tests run on LLM_PROVIDER=mock. No paid API is called by agents.
 
 ## Progress
-- Done on dev (443 tests): T-001 uv layout, T-002 config + llm wrapper, T-003 upload hardening, T-004 model registry + parsers, T-005 SQLite registry, T-006 ingestion + embedded Chroma, T-009 parent-child chunking, T-018 Ollama provider.
-- In flight: T-007 five endpoints (merged with dev, 484 tests; test-writer running, then review and merge).
-- Next: T-008 upload hardening, then P1 (T-010 hybrid, T-011 rerank/citations, T-012 map-reduce) after the budget resets.
+- Done on dev (524 tests): T-001 uv layout, T-002 config + llm wrapper, T-003 upload hardening, T-004 model registry + parsers, T-005 SQLite registry, T-006 ingestion + embedded Chroma, T-007 /v1 endpoints (ADR-0002), T-009 parent-child chunking, T-018 Ollama provider.
+- In flight: nothing. No open worktrees or branches.
+- Next (ready now): T-008 upload hardening (S), T-010 hybrid retrieval (M; includes the doc_ids list filter), then T-011 rerank/citations/abstain, T-012 map-reduce summaries. Run `/autopilot` in a FRESH session after the daily budget resets.
 
 ## Budget
-- BUDGET WARN: day spend $27.22 of $30.00 (91%) on 2026-11-07 (week 30%). Plan: finish T-007 (tests, review, merge) then PAUSE; T-008 and P1 (T-010+) resume after the daily reset or after the human raises `day_usd` in .claude/budgets.json (human-only). Roughly $17 of today's spend is orchestrator overhead from one long session: start a fresh session for the next run.
+- BUDGET: day spend $29.48 of $30.00 (98%) on 2026-11-07; week $29.48 of $90 (33%). Autopilot paused on purpose at a ticket boundary. Raise `day_usd` in .claude/budgets.json (human-only) to continue today.
 
 ## Open (human)
 - Add to .env.example (agents cannot touch it): EMBED_MODEL=sentence-transformers/all-MiniLM-L6-v2, RERANK_MODEL=BAAI/bge-reranker-base, MODELS_FAKE= (test-only, leave empty), OLLAMA_AGENT_MODEL=llama3.1:8b, OLLAMA_FAST_MODEL=llama3.2:3b.
