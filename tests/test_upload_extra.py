@@ -2,7 +2,6 @@
 
 import asyncio
 import io
-import sys
 import tempfile
 import zipfile
 from pathlib import Path
@@ -192,13 +191,16 @@ def test_filename_does_not_influence_temp_path(client, tmpdir_used, seen, monkey
     assert not (tmpdir_used.parent / "x.txt").exists()
 
 
-def test_lazy_import_returns_501_until_t004(tmpdir_used, monkeypatch):
-    monkeypatch.setitem(sys.modules, "app.utilities.file_handler", None)  # forces ImportError
+def test_real_import_error_is_not_501(tmpdir_used, monkeypatch):
+    def boom(path, mime):
+        raise ImportError("broken dependency")
+
+    monkeypatch.setattr(r, "parse_document", boom)
     app = FastAPI()
     app.include_router(r.router)
     c = TestClient(app, raise_server_exceptions=False)
     resp = post(c, "a.txt", b"hi")
-    assert resp.status_code == 501
+    assert resp.status_code == 500
     assert leftovers(tmpdir_used) == []
 
 

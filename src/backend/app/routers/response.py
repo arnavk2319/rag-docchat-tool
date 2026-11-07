@@ -4,14 +4,17 @@ import io
 import os
 import tempfile
 import zipfile
+from dataclasses import asdict
 from pathlib import Path
 
-from starlette.concurrency import run_in_threadpool
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
+from ..core.concurrency import run_blocking
+from ..utilities.file_handler import ParseError, parse_uploaded_file
 from ..utilities.logging_module import logger
 
 router = APIRouter()
+FILE_FIELD = File(...)
 
 MAX_FILE_SIZE = 10 * 1024 * 1024
 CHUNK_SIZE = 64 * 1024
@@ -85,13 +88,9 @@ async def read_limited(file: UploadFile, limit: int | None = None) -> bytes:
     return bytes(buf)
 
 
-def parse_document(path: str, mime_type: str):
-    """Parser hook; lazy import keeps heavy deps out of app import (replaced in T-004)."""
-    try:
-        from ..utilities.file_handler import parse_uploaded_file
-    except ImportError as e:
-        raise HTTPException(status_code=501, detail="Parsing not available yet") from e
-    return parse_uploaded_file(path, mime_type)
+def parse_document(path: str, mime_type: str) -> list[dict]:
+    """Parse to JSON-friendly page/sheet-tagged text; raises ParseError."""
+    return [asdict(p) for p in parse_uploaded_file(path, mime_type)]
 
 
 def summarize_document(parsed) -> str | None:
@@ -106,7 +105,7 @@ def ping_checkpoint():
 
 
 @router.post("/validate-upload", tags=["upload"])
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(file: UploadFile = FILE_FIELD):
     tmp_path: str | None = None
     try:
         if not file.filename:
@@ -129,13 +128,16 @@ async def upload_file(file: UploadFile = File(...)):
             tmp_path = tmp.name
             tmp.write(contents)
 
-        parsed = await run_in_threadpool(parse_document, tmp_path, mime_type)
+        parsed = await run_blocking(parse_document, tmp_path, mime_type)
         if parsed is None:
             raise HTTPException(status_code=422, detail="File could not be parsed")
         logger.info("Parsed upload %s (%s)", ext, mime_type)
         return {"filename": file.filename, "content": parsed, "summary": summarize_document(parsed)}
     except HTTPException:
         raise
+    except ParseError as e:
+        logger.warning("Upload parse failed: %s", e)
+        raise HTTPException(status_code=422, detail="File could not be parsed") from None
     except Exception:
         logger.exception("Unexpected error on upload")
         raise HTTPException(status_code=500, detail="Internal error while processing upload") from None

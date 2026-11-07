@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     chroma_dir: str = "chroma_db"
     db_path: str = "data/docchat.db"
+    embed_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    rerank_model: str = "BAAI/bge-reranker-base"
+    models_fake: bool = False  # env MODELS_FAKE; test-only
     max_upload_mb: int = Field(default=10, gt=0)
     rate_limit_per_min: int = Field(default=30, gt=0)
     daily_usd_cap: float = Field(default=1.0, ge=0)

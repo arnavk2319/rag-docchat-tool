@@ -1,91 +1,154 @@
-import os
-import pandas as pd
-from enum import Enum
-from .logging_module import logger
-from langchain_community.document_loaders import PyPDFLoader, Docx2txtLoader, TextLoader, CSVLoader, UnstructuredExcelLoader
+"""Minimal document parsers returning page/sheet-tagged plain text. No OCR.
 
-class MIME_TYPE(Enum):
-    PDF = "application/pdf"
-    DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    DOC = "application/msword"
-    XLS = "application/vnd.ms-excel"
-    CSV = "text/csv"
-    JPG = "image/jpeg"
-    TXT = "text/plain"
+Importing this module has no side effects. Failures raise ParseError.
+"""
 
-persist_dir = os.path.abspath("./chroma_db")
-print("Exists:", os.path.exists(persist_dir))
-print("Writable?", os.access(persist_dir, os.W_OK))
+import csv
+import logging
+import zipfile
+from dataclasses import dataclass
+from pathlib import Path
 
-def parse_uploaded_file(file_path, mime_type):
-    logger.info(f"PARSING UPLOADED FILE {file_path}: {mime_type}")
-    parsed_doc = None
-    if mime_type == MIME_TYPE.PDF.value:
-        parsed_doc = load_pdf(file_path)
-    elif mime_type == MIME_TYPE.TXT.value:
-        parsed_doc = load_txt(file_path)
-    elif mime_type in [MIME_TYPE.DOC.value, MIME_TYPE.DOCX.value]:
-        logger.info("File is DOC or DOCX")
-        parsed_doc = load_doc(file_path)
-    elif mime_type == MIME_TYPE.CSV.value:
-        parsed_doc = load_csv(file_path)
-    elif mime_type == MIME_TYPE.XLS.value:
-        parsed_doc = load_xls(file_path)
-    logger.info(f"READING PARSED DOC {parsed_doc}")
-    return parsed_doc
-    
-# def init_load_docs():
-#     docs = []
-#     file_path = "src/documents"
-#     for document in os.listdir(file_path):
-#         if document.endswith(".pdf"):
-#             docs += load_pdf(file_path, document)
-#         elif document.endswith(".txt"):
-#             docs += load_txt(file_path, document)
-#         elif document.endswith(".docx"):
-#             docs += load_doc(file_path, document)
-#         elif document.endswith(".csv"):
-#             docs += load_csv(file_path, document)
-#         elif document.endswith(".xls") or document.endswith(".xlsx"):
-#             docs += load_xls(file_path, document)
-#     return docs
+PDF = "application/pdf"
+DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+XLS = "application/vnd.ms-excel"
+CSV = "text/csv"
+TXT = "text/plain"
 
-def load_pdf(file_path):
+# Real decompressed-byte cap for zip containers (declared sizes can be forged).
+MAX_DECOMPRESSED_BYTES = 200 * 1024 * 1024
+
+log = logging.getLogger(__name__)
+
+
+class ParseError(Exception):
+    """The file could not be parsed."""
+
+
+class DecompressionLimitError(ParseError):
+    """A zip container expands past MAX_DECOMPRESSED_BYTES."""
+
+
+@dataclass(frozen=True)
+class ParsedPage:
+    text: str
+    source: str  # "page 3", "sheet Sales", "section 1", ...
+    page: int | None = None
+    sheet: str | None = None
+
+
+def check_zip_bomb(path: str, limit: int | None = None) -> None:
+    """Stream-decompress every member counting actual bytes; abort past the cap."""
+    limit = MAX_DECOMPRESSED_BYTES if limit is None else limit
+    total = 0
     try:
-        logger.debug("reading a PDF file")
-        if len(file_path) > 0:
-            return PyPDFLoader(file_path).load()
-    except Exception as e:
-        print(f"Exception while loading PDF: {e}")
-        
-def load_txt(file_path):
+        with zipfile.ZipFile(path) as z:
+            for info in z.infolist():
+                with z.open(info) as f:
+                    while chunk := f.read(64 * 1024):
+                        total += len(chunk)
+                        if total > limit:
+                            raise DecompressionLimitError(
+                                "archive expands beyond the decompression limit"
+                            )
+    except (zipfile.BadZipFile, NotImplementedError, OSError, RuntimeError, ValueError) as e:
+        raise ParseError(f"invalid zip container: {e}") from e
+
+
+def load_pdf(path: str) -> list[ParsedPage]:
     try:
-        logger.debug("reading a TXT file")
-        if len(file_path) > 0:
-            return TextLoader(file_path).load()
+        from pypdf import PdfReader
+
+        reader = PdfReader(path)
+        return [
+            ParsedPage(text=p.extract_text() or "", source=f"page {i}", page=i)
+            for i, p in enumerate(reader.pages, start=1)
+        ]
     except Exception as e:
-        print(f"Exception while loading TXT: {e}")
-        
-def load_doc(file_path):
+        raise ParseError(f"cannot read PDF: {e}") from e
+
+
+def load_txt(path: str) -> list[ParsedPage]:
     try:
-        logger.debug("reading a DOC file")
-        if len(file_path) > 0:
-            return Docx2txtLoader(file_path).load()
-    except Exception as e:
-        print(f"Exception while loading DOC: {e}")
-        
-def load_csv(file_path):
+        text = Path(path).read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError) as e:
+        raise ParseError(f"cannot read text file: {e}") from e
+    return [ParsedPage(text=text, source="section 1")]
+
+
+def load_docx(path: str) -> list[ParsedPage]:
+    check_zip_bomb(path)
     try:
-        logger.debug("reading a CSV file")
-        if len(file_path) > 0:
-            return CSVLoader(file_path, encoding="utf-8").load()
+        import docx
+
+        d = docx.Document(path)
+        parts = [p.text for p in d.paragraphs if p.text]
+        for t in d.tables:
+            parts += [" | ".join(c.text for c in row.cells) for row in t.rows]
     except Exception as e:
-        print(f"Exception while loading CSV: {e}")
-        
-def load_xls(file_path):
+        raise ParseError(f"cannot read DOCX: {e}") from e
+    return [ParsedPage(text="\n".join(parts), source="section 1")]
+
+
+def load_csv(path: str) -> list[ParsedPage]:
     try:
-        logger.debug("reading an EXCEL file")
-        if len(file_path) > 0:
-            return UnstructuredExcelLoader(file_path).load()
+        with open(path, newline="", encoding="utf-8-sig") as f:
+            rows = [", ".join(r) for r in csv.reader(f)]
+    except (OSError, UnicodeDecodeError, csv.Error) as e:
+        raise ParseError(f"cannot read CSV: {e}") from e
+    return [ParsedPage(text="\n".join(rows), source="sheet 1", sheet="1")]
+
+
+def load_xlsx(path: str) -> list[ParsedPage]:
+    check_zip_bomb(path)
+    try:
+        import pandas as pd
+
+        sheets = pd.read_excel(path, sheet_name=None, header=None, engine="openpyxl")
     except Exception as e:
-        print(f"Exception while loading EXCEL: {e}")
+        raise ParseError(f"cannot read Excel file: {e}") from e
+    out = []
+    for name, df in sheets.items():
+        rows = [
+            ", ".join("" if pd.isna(v) else str(v) for v in row)
+            for row in df.itertuples(index=False)
+        ]
+        out.append(ParsedPage(text="\n".join(rows), source=f"sheet {name}", sheet=str(name)))
+    return out
+
+
+def load_xls(path: str) -> list[ParsedPage]:
+    """Legacy .xls is unsupported: xlrd is not installed, so this always raises ParseError."""
+    try:
+        import pandas as pd
+
+        sheets = pd.read_excel(path, sheet_name=None, header=None)
+    except Exception as e:
+        raise ParseError(f"cannot read legacy Excel file: {e}") from e
+    return [
+        ParsedPage(
+            text="\n".join(", ".join(str(v) for v in r) for r in df.itertuples(index=False)),
+            source=f"sheet {n}",
+            sheet=str(n),
+        )
+        for n, df in sheets.items()
+    ]
+
+
+_LOADERS = {
+    PDF: load_pdf,
+    TXT: load_txt,
+    DOCX: load_docx,
+    CSV: load_csv,
+    XLSX: load_xlsx,
+    XLS: load_xls,
+}
+
+
+def parse_uploaded_file(file_path: str, mime_type: str) -> list[ParsedPage]:
+    loader = _LOADERS.get(mime_type)
+    if loader is None:
+        raise ParseError(f"unsupported type: {mime_type}")
+    log.info("parsing upload as %s", mime_type)
+    return loader(file_path)

@@ -5,6 +5,7 @@ import socket
 import pytest
 
 os.environ["LLM_PROVIDER"] = "mock"
+os.environ["MODELS_FAKE"] = "1"
 os.environ.pop("ANTHROPIC_API_KEY", None)
 
 _LOCAL = {"localhost", "127.0.0.1", "::1", ""}
@@ -42,10 +43,12 @@ def _block_network(monkeypatch: pytest.MonkeyPatch):
 
 @pytest.fixture(autouse=True)
 def _fresh_settings():
-    from app.core import config, llm
+    from app.core import config, llm, models
 
     config.get_settings.cache_clear()
     llm.mock_script()
+    models.reset_models()
     yield
     config.get_settings.cache_clear()
     llm.mock_script()
+    models.reset_models()
