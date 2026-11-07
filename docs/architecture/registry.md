@@ -12,3 +12,4 @@
 - Schema version: `PRAGMA user_version = 1`. Future migrations key off `user_version`; there is no migration code yet.
 - Threading: one short-lived connection per call (thread-safe). Calls are synchronous; async code must wrap them in `run_blocking`.
 - Invalid status raises `ValueError` (update) or pydantic `ValidationError` (create). Deleting vectors in Chroma is the caller's job.
+- `update_pages_or_sheets(owner_id, doc_id, n)`: owner scoped, parameterized; False for unknown/foreign ids, ValueError for n < 0. Set by ingestion after parsing.

@@ -77,6 +77,7 @@ class Registry(Protocol):
     def list_by_owner(self, owner_id: str) -> list[Document]: ...
     def delete(self, owner_id: str, doc_id: str) -> bool: ...
     def update_status(self, owner_id: str, doc_id: str, status: Status) -> bool: ...
+    def update_pages_or_sheets(self, owner_id: str, doc_id: str, n: int) -> bool: ...
 
 
 class SqliteRegistry:
@@ -213,5 +214,15 @@ class SqliteRegistry:
             cur = c.execute(
                 "UPDATE documents SET status=? WHERE owner_id=? AND doc_id=?",
                 (status, owner_id, doc_id),
+            )
+            return cur.rowcount > 0
+
+    def update_pages_or_sheets(self, owner_id: str, doc_id: str, n: int) -> bool:
+        if n < 0:
+            raise ValueError("pages_or_sheets must be >= 0")
+        with self._conn() as c:
+            cur = c.execute(
+                "UPDATE documents SET pages_or_sheets=? WHERE owner_id=? AND doc_id=?",
+                (n, owner_id, doc_id),
             )
             return cur.rowcount > 0
