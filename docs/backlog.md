@@ -33,7 +33,7 @@ Parallel after T-001: T-002, T-003, T-005. After those: T-004 and T-006 chain; T
 | T-012 | P1 | Map-reduce summarization + compression | M | T-007, T-009 | done |
 | T-013 | P2 | Tool framework + search/list/get_page tools | M | T-011 | done |
 | T-014 | P2 | summarize_document, compare_documents tools | S | T-012, T-013 | done |
-| T-015 | P2 | query_table tool | M | T-013 | approved |
+| T-015 | P2 | query_table tool | M | T-013 | done |
 | T-016 | P3 | Agent graph core + bounds | M | T-014, T-015 | approved |
 | T-017 | P3 | Grade, rewrite, groundedness | M | T-016 | approved |
 | T-018 | P3 | Ollama provider | S | T-002 | done |

@@ -22,6 +22,14 @@ from ..parent_lookup import expand_to_parents
 from ..rerank import pick_cited_children, rerank_parents
 from ..retrieval import TOP_N, hybrid_search
 from ..summarization import DocText, summarize_documents
+from .table_query import (
+    TABLE_SUFFIXES,
+    TableError,
+    TableOp,
+    execute,
+    load_table,
+    validate_op,
+)
 
 MAX_RESULT_CHARS = 6000
 MAX_SNIPPET_CHARS = 1200
@@ -45,6 +53,7 @@ class ToolContext:
     embed: Callable[[str], Sequence[float]]
     reranker: Any
     min_rerank_score: float = 0.0
+    table_loader: Callable[[str, str], bytes | None] | None = None  # (owner_id, doc_id) -> raw file
 
 
 def escape(text: str) -> str:
@@ -82,6 +91,26 @@ class GetPageArgs(_Args):
     section: str | None = Field(default=None, min_length=1, max_length=200)
 
 
+class QueryTableArgs(TableOp):
+    doc_id: str = Field(min_length=1, max_length=100)
+
+
+def _query_table(ctx: ToolContext, a: QueryTableArgs) -> str:
+    doc = _visible(ctx, a.doc_id)
+    if doc is None or doc.status != "ready":
+        return wrap(NOT_FOUND, ok=False)
+    if not doc.filename.lower().endswith(TABLE_SUFFIXES):
+        return wrap("not a table document (csv/xlsx only)", ok=False)
+    data = ctx.table_loader(ctx.owner_id, a.doc_id) if ctx.table_loader else None
+    if data is None:
+        return wrap(NOT_FOUND, ok=False)
+    try:
+        op = validate_op(TableOp.model_validate(a.model_dump(exclude={"doc_id"})))
+        return wrap(execute(load_table(data, doc.filename, op.sheet), op))
+    except TableError as exc:
+        return wrap(str(exc), ok=False)
+    except ValueError:
+        return wrap("invalid arguments", ok=False)
 class SummarizeArgs(_Args):
     doc_id: str = Field(min_length=1, max_length=100)
 
@@ -223,6 +252,7 @@ TOOLS: dict[str, Tool] = {
         Tool("search_documents", "Hybrid search over the user's documents.", SearchArgs, _search),
         Tool("list_documents", "List the user's documents.", ListArgs, _list),
         Tool("get_page_or_section", "Fetch a page or section of a document.", GetPageArgs, _get_page),
+        Tool("query_table", "Structured query over a csv/xlsx table.", QueryTableArgs, _query_table),
         Tool("summarize_document", "Summarize one document.", SummarizeArgs, _summarize),
         Tool("compare_documents", "Compare 2-5 documents.", CompareArgs, _compare),
     )
