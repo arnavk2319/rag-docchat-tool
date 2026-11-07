@@ -9,6 +9,8 @@
 | Retrieval (top-k / hybrid / rerank) | BM25 + dense top 20 each, RRF fuse, `bge-reranker-base` to top 5; abstain if top score < `MIN_RERANK_SCORE` | Hybrid catches keywords and semantics; rerank lifts precision; abstention prevents hallucination | $0 API; ~1.1 GB RAM, +200-500 ms CPU |
 | Agent loop / tools | LangGraph: router, plan, tool, grade, rewrite (max 2), answer, groundedness; 6 read-only allow-listed tools; SSE | Spec P3; structured, streamable, bounded | Max 8 steps and $0.05 per run; Haiku for grade/groundedness |
 | Guardrails | Retrieved text and tool output as delimited data; doc_id scoping; per-run step/token/USD caps; rate limit + daily USD cap; PII-free logs; groundedness check | Mitigates indirect injection and runaway spend | Small extra Haiku call per answer (~$0.001) |
+| Wrapper limits | One `llm.complete()`: 30 s timeout, 3 retries (429/5xx/timeout, backoff + jitter), per-run `Budget` (steps/tokens/USD), 1 JSON repair retry; details in `docs/architecture/llm.md` | Single choke point for cost, safety and mock tests | Caps runaway spend; no retry on 4xx |
+| Price table | `config.prices` USD/1M tokens in/out: sonnet-5-5 3.00/15.00, haiku-5-5 1.00/5.00; unknown ids cost 0 | Per-call USD logging and budget enforcement; update when prices change | Logging only; no extra cost |
 
 ## Prompts
 ## Failure modes and fallbacks
