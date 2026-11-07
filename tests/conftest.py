@@ -60,6 +60,6 @@ def _fresh_settings():
 
 @pytest.fixture(autouse=True)
 def _tmp_storage(tmp_path, monkeypatch):
-    """App lifespan creates registry + Chroma; keep them out of the repo."""
-    monkeypatch.setenv("CHROMA_DIR", str(tmp_path / "chroma"))
+    """App lifespan creates the parents SQLite file; keep it out of the repo; force in-memory mode."""
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("DB_PATH", str(tmp_path / "db" / "docchat.db"))

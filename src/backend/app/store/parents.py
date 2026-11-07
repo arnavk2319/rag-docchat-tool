@@ -1,6 +1,6 @@
 """Owner-scoped parent chunks (context returned to the LLM) in the registry's SQLite file.
 
-Children are embedded in Chroma; their parent text lives here. Stdlib sqlite3, per-call
+Children are embedded in the VectorStore; their parent text lives here. Stdlib sqlite3, per-call
 connections, parameterized SQL only. Every read/write is keyed by owner_id.
 """
 

@@ -64,7 +64,6 @@ def test_all_twelve_env_vars_override(monkeypatch):
         "AGENT_MODEL": "a",
         "FAST_MODEL": "f",
         "OLLAMA_BASE_URL": "http://h:1",
-        "CHROMA_DIR": "c",
         "DB_PATH": "d.db",
         "MAX_UPLOAD_MB": "3",
         "RATE_LIMIT_PER_MIN": "4",
@@ -76,7 +75,7 @@ def test_all_twelve_env_vars_override(monkeypatch):
         monkeypatch.setenv(k, v)
     s = Settings()
     assert (s.llm_provider, s.agent_model, s.fast_model) == ("ollama", "a", "f")
-    assert (s.ollama_base_url, s.chroma_dir, s.db_path) == ("http://h:1", "c", "d.db")
+    assert (s.ollama_base_url, s.db_path) == ("http://h:1", "d.db")
     assert (s.max_upload_mb, s.rate_limit_per_min, s.daily_usd_cap) == (3, 4, 2.5)
     assert (s.agent_max_steps, s.agent_max_usd) == (5, 0.5)
 

@@ -73,11 +73,12 @@ def eval_env(tmp: Path, mock: bool) -> Iterator[None]:
     """Offline, fake-model environment; restores the process env afterwards."""
     from app.core import config, llm, models
 
-    keys = ["LLM_PROVIDER", "MODELS_FAKE", "MIN_RERANK_SCORE", "CHROMA_DIR", "DB_PATH",
+    keys = ["LLM_PROVIDER", "MODELS_FAKE", "MIN_RERANK_SCORE", "DATABASE_URL", "DB_PATH",
             "ANTHROPIC_API_KEY"]
     saved = {k: os.environ.get(k) for k in keys}
     os.environ.update(MODELS_FAKE="1", MIN_RERANK_SCORE=MOCK_MIN_RERANK,
-                      CHROMA_DIR=str(tmp / "chroma"), DB_PATH=str(tmp / "db.sqlite"))
+                      DB_PATH=str(tmp / "db.sqlite"))
+    os.environ.pop("DATABASE_URL", None)  # evals never touch a real database
     if mock:
         os.environ["LLM_PROVIDER"] = "mock"
         os.environ.pop("ANTHROPIC_API_KEY", None)
@@ -103,16 +104,17 @@ async def build_corpus(tmp: Path) -> tuple[Any, dict[str, str]]:
     from app.services.agent.tools import ToolContext
     from app.services.ingestion import IngestionService
     from app.store.bm25 import Bm25Store
-    from app.store.chroma import ChromaStore
     from app.store.parents import SqliteParents
     from app.store.registry import SqliteRegistry
+    from app.vectorstore import InMemoryVectorStore, SyncVectors
 
     reg = SqliteRegistry(tmp / "db.sqlite")
     parents = SqliteParents(tmp / "db.sqlite")
-    store = ChromaStore(tmp / "chroma")
-    bm25 = Bm25Store(tmp / "bm25")
+    vstore = InMemoryVectorStore()
+    store = SyncVectors(vstore)
+    bm25 = Bm25Store()
     emb = FakeEmbedder()
-    svc = IngestionService(reg, store, emb, parents=parents, bm25=bm25)
+    svc = IngestionService(reg, vstore, emb, parents=parents, bm25=bm25)
     ids: dict[str, str] = {}
     for p in sorted(FIX.iterdir()):
         doc = await svc.ingest(OWNER, str(p), p.name, MIME[p.suffix])

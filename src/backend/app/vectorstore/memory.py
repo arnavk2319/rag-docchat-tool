@@ -63,8 +63,35 @@ class InMemoryVectorStore:
             del self._rows[k]
         return len(keys)
 
+    async def get_chunks(self, tenant_id, owner_id, chunk_ids) -> list[ScoredChunk]:
+        check_id("tenant_id", tenant_id)
+        check_id("owner_id", owner_id)
+        want = set(chunk_ids)
+        return [
+            c for c in await self.list_chunks(tenant_id, owner_id) if c.chunk_id in want
+        ]
+
+    async def list_chunks(self, tenant_id, owner_id, doc_ids=None) -> list[ScoredChunk]:
+        """All stored chunks (score 0.0) for the owner, ordered by (doc_id, chunk_id)."""
+        check_id("tenant_id", tenant_id)
+        check_id("owner_id", owner_id)
+        out = [
+            ScoredChunk(
+                chunk_id=rec.chunk_id, doc_id=d, text=rec.text,
+                metadata=dict(rec.metadata), score=0.0,
+            )
+            for (t, o, d, _), (rec, _v) in self._rows.items()
+            if t == tenant_id and o == owner_id and (doc_ids is None or d in doc_ids)
+        ]
+        out.sort(key=lambda c: (c.doc_id, c.chunk_id))
+        return out
+
     async def count(self, tenant_id, owner_id=None, doc_id=None) -> int:
         check_id("tenant_id", tenant_id)
+        if owner_id is not None:
+            check_id("owner_id", owner_id)
+        if doc_id is not None:
+            check_id("doc_id", doc_id)
         return sum(
             1
             for (t, o, d, _) in self._rows

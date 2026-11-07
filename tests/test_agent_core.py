@@ -5,9 +5,9 @@ from app.core import llm
 from app.services import summarization
 from app.services.agent.graph import run_agent
 from app.services.agent.tools import ToolContext
-from app.store.chroma import Hit
 from app.store.parents import Parent, SqliteParents
 from app.store.registry import SqliteRegistry
+from app.vectorstore import Hit
 
 
 class FakeVec:

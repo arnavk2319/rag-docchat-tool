@@ -3,14 +3,14 @@
 from app.core.models import FakeEmbedder
 from app.services.retrieval import hybrid_search, rrf
 from app.store.bm25 import Bm25Store
-from app.store.chroma import ChromaStore
+from vecutil import make_store, vec
 
 EMB = FakeEmbedder()
 
 
 def _setup(tmp_path):
-    store = ChromaStore(tmp_path / "chroma")
-    bm = Bm25Store(tmp_path / "bm25")
+    store = make_store()
+    bm = Bm25Store()
     docs = [
         ("u", "d1", "alpha zanzibar protocol notes"),
         ("u", "d2", "beta zanzibar ledger"),
@@ -47,51 +47,33 @@ def test_hybrid_empty_doc_ids_returns_nothing(tmp_path):
     assert bm.query("u", "zanzibar", k=5, doc_ids=[]) == []
 
 
-def test_bm25_only_hit_fetched_from_chroma(tmp_path):
-    store = ChromaStore(tmp_path / "chroma")
-    bm = Bm25Store(tmp_path / "bm25")
-    store.add(["a", "b"], EMB.encode(["x", "yy"]), ["x", "yy"],
-              [{"owner_id": "u", "doc_id": "d"}] * 2)
+def test_bm25_only_hit_fetched_from_store(tmp_path):
+    store = make_store()
+    bm = Bm25Store()
+    texts = ["nothing relevant", "rareword here"]
+    store.add(["a", "b"], [vec(1, 0, 0), vec(0, 1, 0)], texts, [{"owner_id": "u", "doc_id": "d"}] * 2)
+    bm.add_doc("u", "d", ["a", "b"], texts)
     # dense side only sees "a" (top_n=1); BM25 surfaces "b" only.
-    bm.add_doc("u", "d", ["a", "b"], ["nothing relevant", "rareword here"])
-    e = EMB.encode(["x"])[0]
-    got = hybrid_search("u", "rareword", e, store, bm, top_k=5, top_n=1)
+    got = hybrid_search("u", "rareword", vec(1, 0, 0), store, bm, top_k=5, top_n=1)
     assert "b" in [h.chunk_id for h in got]
-    assert next(h for h in got if h.chunk_id == "b").text == "yy"
+    assert next(h for h in got if h.chunk_id == "b").text == "rareword here"
 
 
-def test_bm25_corrupt_files_skipped(tmp_path):
-    d = tmp_path / "bm25"
-    bm = Bm25Store(d)
-    bm.add_doc("u", "good", ["g0"], ["findme token"])
-    (d / "bad1.json").write_text("{not json", encoding="utf-8")
-    (d / "bad2.json").write_text('{"owner_id":"u","doc_id":"x"}', encoding="utf-8")
-    (d / "bad3.json").write_text(
-        '{"owner_id":"u","doc_id":"y","chunk_ids":["a","b"],"tokens":[["t"]]}', encoding="utf-8"
-    )
-    bm2 = Bm25Store(d)  # must not raise
-    assert bm2.has_doc("u", "good")
-    assert not bm2.has_doc("u", "x") and not bm2.has_doc("u", "y")
-    assert [c for c, _ in bm2.query("u", "findme", k=3)] == ["g0"]
-
-
-def test_bm25_restart_after_overwrite_and_delete(tmp_path):
-    d = tmp_path / "bm25"
-    bm = Bm25Store(d)
+def test_bm25_overwrite_and_delete(tmp_path):
+    bm = Bm25Store()
     bm.add_doc("u", "d", ["c0"], ["old words"])
     bm.add_doc("u", "d", ["c1"], ["new words"])
-    bm2 = Bm25Store(d)
-    assert [c for c, _ in bm2.query("u", "words", k=5)] == ["c1"]
-    assert bm2.query("u", "old", k=5) == []
-    bm2.delete_doc("u", "d")
-    bm2.delete_doc("u", "d")  # idempotent
-    assert Bm25Store(d).query("u", "words", k=5) == []
+    assert [c for c, _ in bm.query("u", "words", k=5)] == ["c1"]
+    assert bm.query("u", "old", k=5) == []
+    bm.delete_doc("u", "d")
+    bm.delete_doc("u", "d")  # idempotent
+    assert bm.query("u", "words", k=5) == []
 
 
 def test_bm25_requires_owner_and_ranks_by_term_match(tmp_path):
     import pytest
 
-    bm = Bm25Store(tmp_path / "b")
+    bm = Bm25Store()
     with pytest.raises(ValueError):
         bm.add_doc("", "d", ["c"], ["t"])
     with pytest.raises(ValueError):

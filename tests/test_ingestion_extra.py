@@ -9,9 +9,9 @@ import pytest
 from app.core.models import FakeEmbedder
 from app.services import ingestion as ing
 from app.services.ingestion import IngestionService, chunk_pages
-from app.store.chroma import ChromaStore
 from app.store.registry import SqliteRegistry
 from app.utilities import file_handler as fh
+from vecutil import V111, make_store, vec
 
 FIX = Path(__file__).parent / "fixtures"
 SRC = Path(__file__).parent.parent / "src"
@@ -31,8 +31,8 @@ class Spy(FakeEmbedder):
 def env(tmp_path):
     emb = Spy()
     reg = SqliteRegistry(tmp_path / "r.db")
-    store = ChromaStore(tmp_path / "chroma")
-    return IngestionService(reg, store, emb), reg, store, emb
+    store = make_store()
+    return IngestionService(reg, store.inner, emb), reg, store, emb
 
 
 def pg(text):
@@ -78,17 +78,17 @@ def test_chunk_ids_unique_and_stable():
 async def test_reingest_same_chunk_ids(env, tmp_path):
     svc, reg, store, _ = env
     d = await svc.ingest("u1", TXT, "a.txt", fh.TXT)
-    ids1 = {h.chunk_id for h in store.query("u1", [1, 1, 1], k=100, doc_id=d.doc_id)}
+    ids1 = {h.chunk_id for h in store.query("u1", V111, k=100, doc_id=d.doc_id)}
     reg.update_status("u1", d.doc_id, "failed")
     d2 = await svc.ingest("u1", TXT, "a.txt", fh.TXT)
-    ids2 = {h.chunk_id for h in store.query("u1", [1, 1, 1], k=100, doc_id=d.doc_id)}
+    ids2 = {h.chunk_id for h in store.query("u1", V111, k=100, doc_id=d.doc_id)}
     assert d2.status == "ready" and ids1 == ids2 and len(ids1) == store.count("u1")
 
 
 # ---- store ----
 def test_store_cosine_order_and_filters(tmp_path):
-    s = ChromaStore(tmp_path / "c")
-    vecs = {"a": [1, 0, 0], "b": [0.9, 0.1, 0], "c": [0, 1, 0], "d": [-1, 0, 0]}
+    s = make_store()
+    vecs = {"a": vec(1, 0, 0), "b": vec(0.9, 0.1, 0), "c": vec(0, 1, 0), "d": vec(-1, 0, 0)}
     docs = {"a": "d1", "b": "d1", "c": "d2", "d": "d2"}
     s.add(
         list(vecs),
@@ -96,30 +96,30 @@ def test_store_cosine_order_and_filters(tmp_path):
         list(vecs),
         [{"doc_id": docs[k], "owner_id": "u1"} for k in vecs],
     )
-    hits = s.query("u1", [1, 0, 0], k=4)
+    hits = s.query("u1", vec(1, 0, 0), k=4)
     assert [h.chunk_id for h in hits] == ["a", "b", "c", "d"]
     assert [h.distance for h in hits] == sorted(h.distance for h in hits)
-    assert [h.chunk_id for h in s.query("u1", [1, 0, 0], k=2)] == ["a", "b"]
-    assert {h.chunk_id for h in s.query("u1", [1, 0, 0], k=10, doc_id="d2")} == {
+    assert [h.chunk_id for h in s.query("u1", vec(1, 0, 0), k=2)] == ["a", "b"]
+    assert {h.chunk_id for h in s.query("u1", vec(1, 0, 0), k=10, doc_id="d2")} == {
         "c",
         "d",
     }
-    assert s.query("u1", [1, 0, 0], k=0) == []
-    assert s.query("u1", [1, 0, 0], k=10, doc_id="nope") == []
+    assert s.query("u1", vec(1, 0, 0), k=0) == []
+    assert s.query("u1", vec(1, 0, 0), k=10, doc_id="nope") == []
 
 
 def test_store_owner_isolation_same_doc_id(tmp_path):
-    s = ChromaStore(tmp_path / "c")
+    s = make_store()
     for o in ("A", "B"):
         s.add(
-            [f"{o}1"], [[1, 0, 0]], [f"text {o}"], [{"doc_id": "same", "owner_id": o}]
+            [f"{o}1"], [vec(1, 0, 0)], [f"text {o}"], [{"doc_id": "same", "owner_id": o}]
         )
-    assert [h.chunk_id for h in s.query("B", [1, 0, 0], doc_id="same")] == ["B1"]
+    assert [h.chunk_id for h in s.query("B", vec(1, 0, 0), doc_id="same")] == ["B1"]
     s.delete_doc("B", "same")
     assert s.count("B") == 0 and s.count("A", "same") == 1
-    assert [h.text for h in s.query("A", [1, 0, 0])] == ["text A"]
+    assert [h.text for h in s.query("A", vec(1, 0, 0))] == ["text A"]
     for fn in (
-        lambda: s.query("", [1, 0, 0]),
+        lambda: s.query("", vec(1, 0, 0)),
         lambda: s.delete_doc("", "same"),
         lambda: s.count(""),
     ):
@@ -129,39 +129,27 @@ def test_store_owner_isolation_same_doc_id(tmp_path):
 
 
 def test_store_add_requires_metadata_and_empty_noop(tmp_path):
-    s = ChromaStore(tmp_path / "c")
+    s = make_store()
     s.add([], [], [], [])
     with pytest.raises(ValueError):
-        s.add(["x"], [[1, 0, 0]], ["t"], [{"doc_id": "d"}])
+        s.add(["x"], [vec(1, 0, 0)], ["t"], [{"doc_id": "d"}])
     with pytest.raises(ValueError):
-        s.add(["x"], [[1, 0, 0]], ["t"], [{"owner_id": "o"}])
-    assert s.query("o", [1, 0, 0]) == []  # empty collection
-
-
-def test_store_persists_across_reopen(tmp_path):
-    s = ChromaStore(tmp_path / "c")
-    s.add(["a"], [[1, 0, 0]], ["t"], [{"doc_id": "d", "owner_id": "o"}])
-    del s
-    s2 = ChromaStore(tmp_path / "c")
-    assert s2.count("o", "d") == 1
-    assert s2.query("o", [1, 0, 0])[0].text == "t"
-    assert s2._col.metadata["hnsw:space"] == "cosine"
+        s.add(["x"], [vec(1, 0, 0)], ["t"], [{"owner_id": "o"}])
+    assert s.query("o", vec(1, 0, 0)) == []  # empty collection
 
 
 def test_store_delete_idempotent(tmp_path):
-    s = ChromaStore(tmp_path / "c")
+    s = make_store()
     s.delete_doc("o", "nothing")
-    s.add(["a"], [[1, 0, 0]], ["t"], [{"doc_id": "d", "owner_id": "o"}])
+    s.add(["a"], [vec(1, 0, 0)], ["t"], [{"doc_id": "d", "owner_id": "o"}])
     s.delete_doc("o", "d")
     s.delete_doc("o", "d")
     assert s.count("o") == 0
 
 
-def test_no_httpclient_in_src_and_telemetry_off(tmp_path):
+def test_no_httpclient_in_src(tmp_path):
     for p in SRC.rglob("*.py"):
         assert "HttpClient" not in p.read_text(), p
-    s = ChromaStore(tmp_path / "c")
-    assert s._client.get_settings().anonymized_telemetry is False
 
 
 # ---- service ----
@@ -178,7 +166,7 @@ def test_no_httpclient_in_src_and_telemetry_off(tmp_path):
 async def test_every_chunk_has_full_metadata(env, name, mime, key):
     svc, _, store, _ = env
     d = await svc.ingest("u1", str(FIX / name), name, mime)
-    hits = store.query("u1", [1, 1, 1], k=1000)
+    hits = store.query("u1", V111, k=1000)
     assert hits
     for h in hits:
         m = h.metadata
@@ -282,7 +270,7 @@ async def test_delete_idempotent_and_isolated(env):
     assert await svc.delete("u1", a.doc_id) is True
     assert await svc.delete("u1", a.doc_id) is False
     assert reg.get("u1", a.doc_id) is None and store.count("u1") == 0
-    assert store.query("u1", [1, 1, 1], doc_id=a.doc_id) == []
+    assert store.query("u1", V111, doc_id=a.doc_id) == []
     assert store.count("u2", b.doc_id) > 0 and reg.get("u2", b.doc_id)
 
 

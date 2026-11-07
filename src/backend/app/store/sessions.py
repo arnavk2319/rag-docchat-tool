@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Protocol
 
 from pydantic import BaseModel
 
@@ -62,6 +64,102 @@ def _now() -> datetime:
 
 def _clip(text: str, cap: int) -> str:
     return text if len(text) <= cap else text[: cap - len(MARK)] + MARK
+
+
+class SessionStore(Protocol):
+    max_messages: int
+    max_tokens: int
+
+    def purge_expired(self) -> int: ...
+    def create(self, owner_id: str, max_per_owner: int | None = None) -> str: ...
+    def exists(self, owner_id: str, sid: str) -> bool: ...
+    def messages(self, owner_id: str, sid: str) -> list[SessionMessage] | None: ...
+    def append_turn(
+        self, owner_id: str, sid: str, question: str, answer: str, citation_ids: list[str]
+    ) -> bool: ...
+    def delete(self, owner_id: str, sid: str) -> bool: ...
+
+
+def bound_messages(msgs: list[SessionMessage], max_messages: int, max_tokens: int) -> list[SessionMessage]:
+    """Keep the last `max_messages`, then drop oldest whole turns while over `max_tokens`."""
+    msgs = msgs[-max_messages:]
+    while len(msgs) > 2 and sum(_approx_tokens(m.content) for m in msgs) > max_tokens:
+        msgs = msgs[2:]  # the newest turn is always kept
+    return msgs
+
+
+class InMemorySessions:
+    """Dict-backed SessionStore (same contract as SqliteSessions); used by unit tests."""
+
+    def __init__(
+        self, *, max_messages: int = 20, max_tokens: int = 2000, ttl_hours: float = 24.0,
+        clock=_now,
+    ) -> None:
+        self.max_messages = max(2, max_messages)
+        self.max_tokens = max(1, max_tokens)
+        self.ttl = timedelta(hours=ttl_hours)
+        self._now = clock
+        self._s: dict[str, tuple[str, datetime, list[SessionMessage]]] = {}  # sid -> owner, exp, msgs
+        self._lock = threading.Lock()
+
+    def purge_expired(self) -> int:
+        with self._lock:
+            dead = [k for k, (_, exp, _) in self._s.items() if exp <= self._now()]
+            for k in dead:
+                del self._s[k]
+        return len(dead)
+
+    def _live(self, owner_id: str, sid: str):
+        row = self._s.get(sid)
+        return row if row and row[0] == owner_id and row[1] > self._now() else None
+
+    def create(self, owner_id: str, max_per_owner: int | None = None) -> str:
+        with self._lock:
+            now = self._now()
+            if max_per_owner is not None and sum(
+                1 for o, exp, _ in self._s.values() if o == owner_id and exp > now
+            ) >= max_per_owner:
+                raise SessionLimitError
+            sid = uuid.uuid4().hex
+            self._s[sid] = (owner_id, now + self.ttl, [])
+        return sid
+
+    def exists(self, owner_id: str, sid: str) -> bool:
+        with self._lock:
+            return self._live(owner_id, sid) is not None
+
+    def messages(self, owner_id: str, sid: str) -> list[SessionMessage] | None:
+        with self._lock:
+            row = self._live(owner_id, sid)
+            if row is None:
+                return None
+            return [m.model_copy() for m in bound_messages(row[2], self.max_messages, self.max_tokens)]
+
+    def append_turn(
+        self, owner_id: str, sid: str, question: str, answer: str, citation_ids: list[str],
+    ) -> bool:
+        cap = self.max_tokens * 2
+        now = self._now()
+        with self._lock:
+            row = self._live(owner_id, sid)
+            if row is None:
+                return False
+            msgs = row[2] + [
+                SessionMessage(role="user", content=_clip(question, cap), created_at=now),
+                SessionMessage(role="assistant", content=_clip(answer, cap),
+                               citation_ids=[str(i) for i in citation_ids], created_at=now),
+            ]
+            self._s[sid] = (owner_id, now + self.ttl,
+                            bound_messages(msgs, self.max_messages, self.max_tokens))
+        return True
+
+    def delete(self, owner_id: str, sid: str) -> bool:
+        with self._lock:
+            row = self._s.get(sid)
+            if row is None or row[0] != owner_id:
+                return False
+            del self._s[sid]
+        return True
 
 
 class SqliteSessions:

@@ -1,34 +1,24 @@
-"""Owner-wide BM25Okapi index (shared IDF) rebuilt from per-document JSON token lists (no pickle).
+"""Owner-wide in-memory BM25Okapi index (shared IDF); no files on disk.
 
-One file per (owner, doc): {owner_id, doc_id, chunk_ids, tokens}. Files are written
-atomically (tmp + replace). The in-memory merged BM25Okapi is rebuilt lazily from the JSON-loaded
-tokens (invalidated on add/delete). Every query/delete is owner-scoped. Synchronous; use run_blocking.
+The corpus lives in the VectorStore (chunk text per doc). The index is rebuilt lazily from it:
+`has_owner` is False after a restart, and the first retrieval calls `load_owner` with the stored
+chunks. add_doc/delete_doc keep this process current; a second replica refreshes on its own restart
+(see docs/backlog.md). Every query/delete is owner-scoped. Synchronous; use run_blocking.
 """
 
 from __future__ import annotations
 
-import hashlib
-import json
-import logging
-import os
 import re
 import threading
 from collections.abc import Sequence
-from pathlib import Path
 
 from rank_bm25 import BM25Okapi
-
-log = logging.getLogger(__name__)
 
 _TOKEN = re.compile(r"\w+", re.UNICODE)
 
 
 def tokenize(text: str) -> list[str]:
     return _TOKEN.findall(text.lower())
-
-
-def _h(s: str) -> str:
-    return hashlib.sha256(s.encode()).hexdigest()[:24]
 
 
 class _DocIndex:
@@ -40,35 +30,31 @@ class _DocIndex:
 
 
 class Bm25Store:
-    def __init__(self, path: str | Path) -> None:
-        self._dir = Path(path)
-        self._dir.mkdir(parents=True, exist_ok=True)
+    def __init__(self) -> None:
         self._idx: dict[tuple[str, str], _DocIndex] = {}
+        self._loaded: set[str] = set()
         # owner -> (chunk_ids, doc_of_chunk, tokens, BM25Okapi) over ALL the owner's docs, so IDF is
         # shared and scores are comparable across documents (per-doc IDF starved small docs).
         self._merged: dict[str, tuple[list[str], list[str], list[list[str]], BM25Okapi]] = {}
         self._lock = threading.Lock()
-        self.load_all()
 
-    def _file(self, owner_id: str, doc_id: str) -> Path:
-        return self._dir / f"{_h(owner_id)}-{_h(doc_id)}.json"
+    def has_owner(self, owner_id: str) -> bool:
+        return owner_id in self._loaded
 
-    def load_all(self) -> int:
-        """Rebuild every in-memory index from disk. Corrupt files are skipped (logged)."""
-        loaded: dict[tuple[str, str], _DocIndex] = {}
-        for f in self._dir.glob("*.json"):
-            try:
-                d = json.loads(f.read_text(encoding="utf-8"))
-                ids, toks = list(d["chunk_ids"]), [list(map(str, t)) for t in d["tokens"]]
-                if len(ids) != len(toks):
-                    raise ValueError("length mismatch")
-                loaded[(str(d["owner_id"]), str(d["doc_id"]))] = _DocIndex(ids, toks)
-            except (OSError, ValueError, KeyError, TypeError) as e:
-                log.warning("bm25 index skipped file=%s err=%s", f.name, type(e).__name__)
+    def load_owner(self, owner_id: str, docs: dict[str, tuple[list[str], list[str]]]) -> None:
+        """Rebuild the owner's index from stored chunks: {doc_id: (chunk_ids, texts)}."""
+        if not owner_id:
+            raise ValueError("owner_id is required")
+        built = {
+            (owner_id, d): _DocIndex(list(ids), [tokenize(t) for t in texts])
+            for d, (ids, texts) in docs.items()
+        }
         with self._lock:
-            self._idx = loaded
-            self._merged = {}
-        return len(loaded)
+            for k in [k for k in self._idx if k[0] == owner_id]:
+                del self._idx[k]
+            self._idx.update(built)
+            self._loaded.add(owner_id)
+            self._merged.pop(owner_id, None)
 
     def add_doc(
         self, owner_id: str, doc_id: str, chunk_ids: Sequence[str], texts: Sequence[str]
@@ -77,15 +63,7 @@ class Bm25Store:
             raise ValueError("owner_id and doc_id are required")
         if len(chunk_ids) != len(texts):
             raise ValueError("chunk_ids/texts length mismatch")
-        ids, toks = list(chunk_ids), [tokenize(t) for t in texts]
-        path = self._file(owner_id, doc_id)
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(
-            json.dumps({"owner_id": owner_id, "doc_id": doc_id, "chunk_ids": ids, "tokens": toks}),
-            encoding="utf-8",
-        )
-        os.replace(tmp, path)
-        idx = _DocIndex(ids, toks)
+        idx = _DocIndex(list(chunk_ids), [tokenize(t) for t in texts])
         with self._lock:
             self._idx[(owner_id, doc_id)] = idx
             self._merged.pop(owner_id, None)
@@ -93,7 +71,6 @@ class Bm25Store:
     def delete_doc(self, owner_id: str, doc_id: str) -> None:
         if not owner_id:
             raise ValueError("owner_id is required")
-        self._file(owner_id, doc_id).unlink(missing_ok=True)
         with self._lock:
             self._idx.pop((owner_id, doc_id), None)
             self._merged.pop(owner_id, None)

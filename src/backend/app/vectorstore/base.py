@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field
 
 EMBEDDING_DIM = 384
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+# Chunk ids are "<doc>:<parent>:<n>" style (app/services/chunking.py); only ever bound as parameters.
+_CHUNK_ID_RE = re.compile(r"^[A-Za-z0-9_:.-]{1,128}$")
 
 
 class ChunkRecord(BaseModel):
@@ -26,7 +28,8 @@ class ScoredChunk(BaseModel):
 
 
 def check_id(name: str, value: str) -> str:
-    if not isinstance(value, str) or not _ID_RE.fullmatch(value):
+    rx = _CHUNK_ID_RE if name == "chunk_id" else _ID_RE
+    if not isinstance(value, str) or not rx.fullmatch(value):
         raise ValueError(f"invalid {name}")
     return value
 
@@ -52,6 +55,14 @@ class VectorStore(Protocol):
     ) -> list[ScoredChunk]: ...
 
     async def delete_doc(self, tenant_id: str, owner_id: str, doc_id: str) -> int: ...
+
+    async def get_chunks(
+        self, tenant_id: str, owner_id: str, chunk_ids: list[str]
+    ) -> list[ScoredChunk]: ...
+
+    async def list_chunks(
+        self, tenant_id: str, owner_id: str, doc_ids: list[str] | None = None
+    ) -> list[ScoredChunk]: ...
 
     async def count(
         self, tenant_id: str, owner_id: str | None = None, doc_id: str | None = None

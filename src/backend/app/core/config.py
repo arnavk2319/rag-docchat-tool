@@ -26,7 +26,8 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_agent_model: str = "llama3.1:8b"  # env OLLAMA_AGENT_MODEL
     ollama_fast_model: str = "llama3.2:3b"  # env OLLAMA_FAST_MODEL
-    chroma_dir: str = "chroma_db"
+    database_url: SecretStr = SecretStr("")  # env DATABASE_URL; set = Postgres, empty = in-memory dev mode
+    db_pool_max: int = Field(default=10, gt=0)  # env DB_POOL_MAX
     db_path: str = "data/docchat.db"
     embed_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     rerank_model: str = "BAAI/bge-reranker-base"

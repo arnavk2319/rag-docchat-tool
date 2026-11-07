@@ -1,9 +1,9 @@
 import pytest
 from app.services.agent import tools as T
 from app.services.agent.tools import ToolContext, run_tool
-from app.store.chroma import Hit
 from app.store.parents import Parent, SqliteParents
 from app.store.registry import SqliteRegistry
+from app.vectorstore import Hit
 
 
 class FakeVec:

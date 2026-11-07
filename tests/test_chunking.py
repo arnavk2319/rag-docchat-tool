@@ -5,10 +5,11 @@ from app.core.models import FakeEmbedder
 from app.services import chunking as ck
 from app.services.ingestion import IngestionService
 from app.services.parent_lookup import expand_to_parents
-from app.store.chroma import ChromaStore, Hit
 from app.store.parents import Parent, SqliteParents
 from app.store.registry import SqliteRegistry
 from app.utilities import file_handler as fh
+from app.vectorstore import Hit
+from vecutil import make_store
 
 PROSE = ("The quick brown fox jumps over the lazy dog. " * 12 + "\n\n") * 40
 
@@ -94,8 +95,8 @@ def test_parent_store_order_scope_replace_delete(tmp_path):
 
 async def test_ingest_embeds_children_only_and_child_query_returns_parent(tmp_path):
     reg = SqliteRegistry(tmp_path / "r.db")
-    store = ChromaStore(tmp_path / "c")
-    svc = IngestionService(reg, store, FakeEmbedder())
+    store = make_store()
+    svc = IngestionService(reg, store.inner, FakeEmbedder())
     f = tmp_path / "a.txt"
     f.write_text("# Title\n" + PROSE)
     d = await svc.ingest("u1", str(f), "a.txt", fh.TXT)

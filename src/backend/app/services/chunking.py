@@ -12,7 +12,7 @@ Chunks are trimmed of surrounding whitespace; whitespace-only chunks are dropped
 
 Sections: simple heading heuristics (markdown '#', numbered '1.2 Title', short ALL-CAPS lines).
 A chunk's section is the nearest heading at or before its start, carried across pages of the
-document; '' when none (never None, Chroma metadata must not contain None). Skipped for
+document; '' when none (never None, vector-store metadata must not contain None). Skipped for
 sheets (csv/xlsx) where rows are data, not prose.
 """
 

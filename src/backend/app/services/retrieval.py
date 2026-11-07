@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from app.store.bm25 import Bm25Store
-from app.store.chroma import Hit, VectorStore
+from app.vectorstore.sync import Hit, SyncVectors
 
 RRF_K = 60
 TOP_N = 20
@@ -23,16 +23,28 @@ def rrf(rankings: Sequence[Sequence[str]], k: int = RRF_K) -> list[tuple[str, fl
     return sorted(score.items(), key=lambda t: (-t[1], t[0]))
 
 
+def rebuild_bm25(owner_id: str, store: SyncVectors, bm25: Bm25Store) -> None:
+    """Rebuild the owner's BM25 index from the chunk text persisted in the vector store."""
+    docs: dict[str, tuple[list[str], list[str]]] = {}
+    for h in store.list_chunks(owner_id):
+        ids, texts = docs.setdefault(h.metadata["doc_id"], ([], []))
+        ids.append(h.chunk_id)
+        texts.append(h.text)
+    bm25.load_owner(owner_id, docs)
+
+
 def hybrid_search(
     owner_id: str,
     question: str,
     embedding: Sequence[float],
-    store: VectorStore,
+    store: SyncVectors,
     bm25: Bm25Store | None,
     doc_ids: Sequence[str] | None = None,
     top_k: int = 5,
     top_n: int = TOP_N,
 ) -> list[Hit]:
+    if bm25 is not None and not bm25.has_owner(owner_id):
+        rebuild_bm25(owner_id, store, bm25)
     dense = store.query(owner_id, embedding, k=top_n, doc_ids=doc_ids)
     sparse = bm25.query(owner_id, question, k=top_n, doc_ids=doc_ids) if bm25 else []
     by_id = {h.chunk_id: h for h in dense}

@@ -20,9 +20,9 @@ from app.services import summarization
 from app.services.agent import nodes
 from app.services.agent.graph import run_agent
 from app.services.agent.tools import TOOLS, ToolContext
-from app.store.chroma import Hit
 from app.store.parents import Parent, SqliteParents
 from app.store.registry import SqliteRegistry
+from app.vectorstore import Hit
 from authutil import bearer
 
 FIX = Path(__file__).parent / "fixtures"

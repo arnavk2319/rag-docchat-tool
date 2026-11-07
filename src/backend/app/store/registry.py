@@ -8,6 +8,7 @@ Every method is owner-scoped: a foreign owner sees None / [] / False.
 from __future__ import annotations
 
 import sqlite3
+import threading
 import uuid
 from contextlib import AbstractContextManager
 from datetime import UTC, datetime
@@ -253,3 +254,81 @@ class SqliteRegistry:
                 (reason, owner_id, doc_id),
             )
             return cur.rowcount > 0
+
+
+class InMemoryRegistry:
+    """Dict-backed Registry (same contract as SqliteRegistry); used by unit tests."""
+
+    def __init__(self) -> None:
+        self._docs: dict[str, Document] = {}
+        self._lock = threading.Lock()
+
+    def create(
+        self, owner_id, filename, mime, size, sha256, pages_or_sheets=0, status="pending"
+    ) -> str:
+        return self.create_if_absent(
+            owner_id, filename, mime, size, sha256, pages_or_sheets, status
+        )[0].doc_id
+
+    def create_if_absent(
+        self, owner_id, filename, mime, size, sha256, pages_or_sheets=0, status="pending"
+    ) -> tuple[Document, bool]:
+        doc = Document(
+            doc_id=uuid.uuid4().hex, owner_id=owner_id, filename=filename, mime=mime, size=size,
+            sha256=sha256, pages_or_sheets=pages_or_sheets, created_at=datetime.now(UTC),
+            status=status,
+        )
+        with self._lock:
+            for d in self._docs.values():
+                if d.owner_id == owner_id and d.sha256 == sha256:
+                    return d.model_copy(), False
+            self._docs[doc.doc_id] = doc
+        return doc.model_copy(), True
+
+    def get_by_sha256(self, owner_id: str, sha256: str) -> Document | None:
+        with self._lock:
+            for d in self._docs.values():
+                if d.owner_id == owner_id and d.sha256 == sha256:
+                    return d.model_copy()
+        return None
+
+    def get(self, owner_id: str, doc_id: str) -> Document | None:
+        with self._lock:
+            d = self._docs.get(doc_id)
+            return d.model_copy() if d and d.owner_id == owner_id else None
+
+    def list_by_owner(self, owner_id: str) -> list[Document]:
+        with self._lock:
+            docs = [d.model_copy() for d in self._docs.values() if d.owner_id == owner_id]
+        return sorted(docs, key=lambda d: (d.created_at, d.doc_id))
+
+    def delete(self, owner_id: str, doc_id: str) -> bool:
+        with self._lock:
+            d = self._docs.get(doc_id)
+            if d is None or d.owner_id != owner_id:
+                return False
+            del self._docs[doc_id]
+            return True
+
+    def _update(self, owner_id: str, doc_id: str, **fields) -> bool:
+        with self._lock:
+            d = self._docs.get(doc_id)
+            if d is None or d.owner_id != owner_id:
+                return False
+            self._docs[doc_id] = d.model_copy(update=fields)
+            return True
+
+    def update_status(self, owner_id: str, doc_id: str, status: Status) -> bool:
+        if status not in _STATUSES:
+            raise ValueError(f"invalid status: {status!r}")
+        d = self.get(owner_id, doc_id)
+        keep = d.failure_reason if status == "failed" and d else None
+        return self._update(owner_id, doc_id, status=status, failure_reason=keep)
+
+    def update_pages_or_sheets(self, owner_id: str, doc_id: str, n: int) -> bool:
+        if n < 0:
+            raise ValueError("pages_or_sheets must be >= 0")
+        return self._update(owner_id, doc_id, pages_or_sheets=n)
+
+    def set_failure_reason(self, owner_id: str, doc_id: str, reason: str | None) -> bool:
+        return self._update(owner_id, doc_id, failure_reason=reason)

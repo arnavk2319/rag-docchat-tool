@@ -22,11 +22,11 @@ from ..core.config import get_settings
 from ..core.limits import GLOBAL_KEY, Lease, RateLimiter, SpendCapError, SpendLedger
 from ..services.ingestion import IngestionService
 from ..store.bm25 import Bm25Store
-from ..store.chroma import VectorStore
 from ..store.parents import SqliteParents
 from ..store.registry import Registry
 from ..store.sessions import SqliteSessions
 from ..store.spend import SqliteSpend
+from ..vectorstore.sync import SyncVectors
 
 UserId = NewType("UserId", str)
 
@@ -88,7 +88,7 @@ def get_registry(request: Request) -> Registry:
     return request.app.state.registry
 
 
-def get_store(request: Request) -> VectorStore:
+def get_store(request: Request) -> SyncVectors:
     return request.app.state.store
 
 
@@ -110,7 +110,7 @@ def get_ingestion(request: Request) -> IngestionService:
 
 CurrentUser = Annotated[UserId, Depends(current_user)]
 RegistryDep = Annotated[Registry, Depends(get_registry)]
-StoreDep = Annotated[VectorStore, Depends(get_store)]
+StoreDep = Annotated[SyncVectors, Depends(get_store)]
 ParentsDep = Annotated[SqliteParents, Depends(get_parents)]
 Bm25Dep = Annotated[Bm25Store | None, Depends(get_bm25)]
 SessionsDep = Annotated[SqliteSessions, Depends(get_sessions)]

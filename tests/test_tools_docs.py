@@ -2,9 +2,9 @@ import pytest
 from app.core import llm
 from app.services import summarization
 from app.services.agent.tools import MAX_COMPARE_DOCS, ToolContext, run_tool
-from app.store.chroma import Hit
 from app.store.parents import Parent, SqliteParents
 from app.store.registry import SqliteRegistry
+from app.vectorstore import Hit
 
 
 class FakeVec:

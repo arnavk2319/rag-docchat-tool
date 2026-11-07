@@ -412,7 +412,7 @@ def test_file_handler_import_no_side_effects(tmp_path):
     assert res.returncode == 0, res.stderr[-800:]
 
 
-# ---------- upload e2e (real app, fake models, tmp registry + Chroma) ----------
+# ---------- upload e2e (real app, fake models, in-memory registry + vectors) ----------
 
 
 @pytest.fixture

@@ -169,7 +169,7 @@ def test_bm25_scores_are_comparable_across_documents(tmp_path):
     document scored ~0 and lost to common words in a big document. IDF is now owner-wide."""
     from app.store.bm25 import Bm25Store
 
-    bm = Bm25Store(tmp_path)
+    bm = Bm25Store()
     bm.add_doc("u", "big", [f"b{i}" for i in range(12)],
                [f"time date time date time date plan number {i}" for i in range(12)])
     bm.add_doc("u", "small", ["s0", "s1"],
