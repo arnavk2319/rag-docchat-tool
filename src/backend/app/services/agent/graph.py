@@ -40,7 +40,7 @@ class AgentResult:
         return bool(self.stop_reason)
 
 
-def build_graph(d: Deps) -> Any:
+def build_graph(d: Deps, verify: bool = True) -> Any:
     async def n_router(s: AgentState) -> AgentState:
         return await nodes.router(s, d)
 
@@ -50,6 +50,15 @@ def build_graph(d: Deps) -> Any:
     async def n_tool(s: AgentState) -> AgentState:
         return await nodes.tool(s, d)
 
+    async def n_grade(s: AgentState) -> AgentState:
+        return await nodes.grade(s, d)
+
+    async def n_rewrite(s: AgentState) -> AgentState:
+        return await nodes.rewrite(s, d)
+
+    async def n_ground(s: AgentState) -> AgentState:
+        return await nodes.groundedness(s, d)
+
     async def n_answer(s: AgentState) -> AgentState:
         return await nodes.answer(s, d)
 
@@ -58,18 +67,39 @@ def build_graph(d: Deps) -> Any:
     g.add_node("plan", n_plan)
     g.add_node("tool", n_tool)
     g.add_node("answer", n_answer)
+    final_to = "grade" if verify else "answer"
+    if verify:
+        g.add_node("grade", n_grade)
+        g.add_node("rewrite", n_rewrite)
+        g.add_node("ground", n_ground)
     g.add_edge(START, "router")
     g.add_conditional_edges(
         "router", lambda s: END if s.get("stop") or s.get("route") == "direct" else "plan",
         {END: END, "plan": "plan"},
     )
     g.add_conditional_edges(
-        "plan", lambda s: s.get("next", "stop"), {"tool": "tool", "final": "answer", "stop": END}
+        "plan", lambda s: s.get("next", "stop"), {"tool": "tool", "final": final_to, "stop": END}
     )
     g.add_conditional_edges(
         "tool", lambda s: END if s.get("stop") else "plan", {END: END, "plan": "plan"}
     )
-    g.add_edge("answer", END)
+    if verify:
+        g.add_conditional_edges(
+            "grade",
+            lambda s: END if s.get("stop") or s.get("grade") == "abstain"
+            else ("answer" if s.get("grade") == "relevant" else "rewrite"),
+            {END: END, "answer": "answer", "rewrite": "rewrite"},
+        )
+        g.add_conditional_edges(
+            "rewrite", lambda s: END if s.get("stop") or s.get("next") == "stop" else "plan",
+            {END: END, "plan": "plan"},
+        )
+        g.add_conditional_edges(
+            "answer", lambda s: END if s.get("stop") else "ground", {END: END, "ground": "ground"}
+        )
+        g.add_edge("ground", END)
+    else:
+        g.add_edge("answer", END)
     return g.compile()
 
 
@@ -80,6 +110,7 @@ async def run_agent(
     max_steps: int | None = None,
     max_tokens: int = AGENT_MAX_TOKENS,
     max_usd: float | None = None,
+    verify: bool = True,
 ) -> AgentResult:
     s = get_settings()
     max_steps = max_steps or s.agent_max_steps
@@ -90,7 +121,7 @@ async def run_agent(
     )
     ctx = replace(ctx, budget=budget, min_rerank_score=s.min_rerank_score)
     d = Deps(ctx=ctx, budget=budget, run_id=uuid.uuid4().hex[:12])
-    graph = build_graph(d)
+    graph = build_graph(d, verify)
     last: AgentState = {"question": question[:MAX_QUESTION_CHARS], "steps": 0, "history": []}
     stop = ""
     try:

@@ -12,7 +12,7 @@ def test_defaults(monkeypatch):
     s = Settings()
     assert s.llm_provider == "mock"
     assert s.agent_model == "claude-sonnet-5-5" and s.fast_model == "claude-haiku-5-5"
-    assert s.agent_max_steps == 8 and s.max_upload_mb == 10 and s.agent_max_usd == 0.05
+    assert s.agent_max_steps == 16 and s.max_upload_mb == 10 and s.agent_max_usd == 0.05
 
 
 def test_env_override(monkeypatch):

@@ -12,6 +12,6 @@
 | MAX_UPLOAD_MB | max_upload_mb | 10 |
 | RATE_LIMIT_PER_MIN | rate_limit_per_min | 30 |
 | DAILY_USD_CAP | daily_usd_cap | 1.0 |
-| AGENT_MAX_STEPS / AGENT_MAX_USD | agent_max_steps / agent_max_usd | 8 / 0.05 |
+| AGENT_MAX_STEPS / AGENT_MAX_USD | agent_max_steps / agent_max_usd | 16 / 0.05 |
 
 Non-env fields: `prices` (USD per 1M tokens, input/output, per model id), `llm_timeout_s` (30), `llm_max_retries` (3). Model ids appear only in this file (test enforced). Logging: `core/logging.py` `setup_logging()` installs one idempotent JSON-line stderr handler; extras passed via `extra=` become keys; never log prompts or document text.

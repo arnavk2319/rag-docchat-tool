@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     max_upload_mb: int = Field(default=10, gt=0)
     rate_limit_per_min: int = Field(default=30, gt=0)
     daily_usd_cap: float = Field(default=1.0, ge=0)
-    agent_max_steps: int = Field(default=8, gt=0)
+    agent_max_steps: int = Field(default=16, gt=0)
     agent_max_usd: float = Field(default=0.05, ge=0)
     summary_max_usd: float = Field(default=0.02, ge=0)  # env SUMMARY_MAX_USD
     summary_reduce_role: Literal["agent", "fast"] = "fast"  # env SUMMARY_REDUCE_ROLE

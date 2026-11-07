@@ -45,6 +45,10 @@ def env(tmp_path):
     return ctx, ids
 
 
+async def run_core(*a, **kw):
+    return await run_agent(*a, verify=False, **kw)  # T-016 scripts predate grade/ground
+
+
 def J(**kw):
     return json.dumps(kw)
 
@@ -75,7 +79,7 @@ def spy(monkeypatch):
 async def test_direct_path_zero_tools(env, spy):
     ctx, _ = env
     llm.mock_script(J(route="direct", answer="Hello! Ask me about your documents."))
-    r = await run_agent("hi", ctx)
+    r = await run_core("hi", ctx)
     assert r.tool_calls == 0 and r.answer.startswith("Hello") and not r.bounded_stop
     assert len(spy) == 1
 
@@ -85,7 +89,7 @@ async def test_retrieve_path_cites(env):
     d = ids["alice"]
     llm.mock_script(ROUTE_R, plan_tool("search_documents", query="pricing"), PLAN_FINAL,
                     f"Pricing is 42 dollars [doc_id={d}].")
-    r = await run_agent("what is the pricing?", ctx)
+    r = await run_core("what is the pricing?", ctx)
     assert r.tool_calls == 1 and not r.bounded_stop
     assert r.citations and r.citations[0]["doc_id"] == d
     assert r.steps <= 8
@@ -94,22 +98,22 @@ async def test_retrieve_path_cites(env):
 async def test_no_evidence_abstains_without_answer_call(env, spy):
     ctx, _ = env
     llm.mock_script(ROUTE_R, plan_tool("get_page_or_section", doc_id="nope"), PLAN_FINAL)
-    r = await run_agent("q", ctx)
+    r = await run_core("q", ctx)
     assert r.answer == "I don't know." and len(spy) == 3
 
 
 async def test_infinite_tool_loop_is_bounded(env):
     ctx, _ = env
     llm.mock_script(ROUTE_R, *[plan_tool("list_documents")] * 30)
-    r = await run_agent("loop", ctx)
-    assert r.stop_reason == "max_steps" and r.steps <= 8 and r.tool_calls >= 1
+    r = await run_core("loop", ctx)
+    assert r.stop_reason == "max_steps" and r.steps <= 16 and r.tool_calls >= 1
     assert "Stopped" in r.answer
 
 
 async def test_unknown_tool_rejected_and_counted(env):
     ctx, _ = env
     llm.mock_script(ROUTE_R, plan_tool("rm_rf", path="/"), PLAN_FINAL)
-    r = await run_agent("q", ctx)
+    r = await run_core("q", ctx)
     assert r.tool_calls == 1 and r.answer == "I don't know."
     assert r.steps == 5  # router, plan, tool, plan, answer
 
@@ -121,20 +125,20 @@ async def test_model_cannot_supply_owner(env, monkeypatch):
     real = nodes.run_tool
     monkeypatch.setattr(nodes, "run_tool", lambda n, a, c: seen.append(real(n, a, c)) or seen[-1])
     llm.mock_script(ROUTE_R, plan_tool("list_documents", owner_id="bob"), PLAN_FINAL)
-    await run_agent("q", ctx)
+    await run_core("q", ctx)
     assert "invalid arguments" in seen[0] and "bob" not in seen[0]
 
 
 async def test_clamps_max_tokens_and_skips_when_usd_low(env, spy):
     ctx, _ = env
     llm.mock_script(J(route="direct", answer="ok"))
-    await run_agent("hi", ctx, max_tokens=120)
+    await run_core("hi", ctx, max_tokens=120)
     assert spy[0]["max_tokens"] == 120
     spy.clear()
-    r = await run_agent("hi", ctx, max_usd=0.0)
+    r = await run_core("hi", ctx, max_usd=0.0)
     assert not spy and r.stop_reason == "budget"
     llm.mock_script(J(route="direct", answer="ok"))
-    r = await run_agent("hi", ctx, max_usd=1e-9)  # cannot cover expected cost
+    r = await run_core("hi", ctx, max_usd=1e-9)  # cannot cover expected cost
     assert not spy and r.stop_reason == "budget"
 
 
@@ -150,14 +154,14 @@ async def test_paid_result_used_when_budget_trips(env):
     ctx, _ = env
     # tiny token cap: the router call is paid for, trips the budget, and its reply is still used
     llm.mock_script(J(route="direct", answer="salvaged answer"))
-    r = await run_agent("hi", ctx, max_tokens=30)
+    r = await run_core("hi", ctx, max_tokens=30)
     assert r.answer == "salvaged answer" and r.stop_reason == "budget"
 
 
 async def test_tool_inner_llm_calls_count_against_budget(env):
     ctx, ids = env
     llm.mock_script(ROUTE_R, plan_tool("summarize_document", doc_id=ids["alice"]), PLAN_FINAL, "done")
-    r = await run_agent("summarize", ctx)
+    r = await run_core("summarize", ctx)
     assert r.llm_calls > 3 and r.tokens > 0 and r.usd >= 0  # router+plan+plan(+answer)+summary calls
 
 
@@ -168,14 +172,14 @@ async def test_compare_charged_and_exhausted_budget_stops(env):
     ctx.parents.replace_doc("alice", other, [Parent(owner_id="alice", doc_id=other, parent_id="pz", page=1,
                             section="S", char_start=0, char_end=5, text="other")])
     llm.mock_script(ROUTE_R, plan_tool("compare_documents", doc_ids=[ids["alice"], other]), PLAN_FINAL)
-    r = await run_agent("compare", ctx, max_tokens=500)
+    r = await run_core("compare", ctx, max_tokens=500)
     assert r.llm_calls >= 3  # includes the compare tool's own call
 
 
 async def test_unreachable_budget_inside_tool_stops(env):
     ctx, ids = env
     llm.mock_script(ROUTE_R, plan_tool("summarize_document", doc_id=ids["alice"]), PLAN_FINAL)
-    r = await run_agent("s", ctx, max_usd=0.0004)
+    r = await run_core("s", ctx, max_usd=0.0004)
     assert r.stop_reason == "budget" or r.usd <= 0.0004 + 1e-4
 
 
@@ -185,7 +189,7 @@ async def test_min_rerank_score_passed(env, monkeypatch):
     from app.core import config
     config.get_settings.cache_clear()
     llm.mock_script(ROUTE_R, plan_tool("search_documents", query="pricing"), PLAN_FINAL)
-    r = await run_agent("q", ctx)  # reranker scores 1.0 < 5.0 -> no results -> abstain
+    r = await run_core("q", ctx)  # reranker scores 1.0 < 5.0 -> no results -> abstain
     assert r.answer == "I don't know."
 
 
@@ -201,10 +205,10 @@ async def test_scripted_eval_task_success(env):
          lambda r: r.citations and r.citations[0]["doc_id"] == d),
         ([ROUTE_R, plan_tool("get_page_or_section", doc_id=d, page=1), PLAN_FINAL, f"42 dollars [doc_id={d}]"],
          lambda r: r.tool_calls == 1 and not r.bounded_stop),
-        ([ROUTE_R, *[plan_tool("list_documents")] * 20], lambda r: r.stop_reason == "max_steps" and r.steps <= 8),
+        ([ROUTE_R, *[plan_tool("list_documents")] * 20], lambda r: r.stop_reason == "max_steps" and r.steps <= 16),
     ]
     ok = 0
     for script, check in cases:
         llm.mock_script(*script)
-        ok += bool(check(await run_agent("q", ctx)))
+        ok += bool(check(await run_core("q", ctx)))
     assert ok / len(cases) >= 0.8

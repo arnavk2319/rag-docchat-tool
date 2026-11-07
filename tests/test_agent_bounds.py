@@ -5,7 +5,6 @@ import asyncio
 import pytest
 from app.core import llm
 from app.services.agent import nodes
-from app.services.agent.graph import run_agent
 from app.store.parents import Parent
 from test_agent_core import (  # noqa: F401
     PLAN_FINAL,
@@ -13,6 +12,7 @@ from test_agent_core import (  # noqa: F401
     J,
     env,
     plan_tool,
+    run_core,
     spy,
 )
 
@@ -20,21 +20,21 @@ from test_agent_core import (  # noqa: F401
 async def test_max_steps_alone_stops(env):
     ctx, _ = env
     llm.mock_script(ROUTE_R, *[plan_tool("list_documents")] * 30)
-    r = await run_agent("q", ctx, max_steps=4)
+    r = await run_core("q", ctx, max_steps=4)
     assert r.stop_reason == "max_steps" and r.steps <= 4
 
 
 async def test_max_tokens_alone_stops(env):
     ctx, _ = env
     llm.mock_script(ROUTE_R, *[plan_tool("list_documents")] * 30)
-    r = await run_agent("q", ctx, max_tokens=60, max_usd=100.0)
+    r = await run_core("q", ctx, max_tokens=60, max_usd=100.0)
     assert r.stop_reason == "budget" and r.tokens <= 60 + 400
 
 
 async def test_max_usd_alone_stops(env):
     ctx, _ = env
     llm.mock_script(ROUTE_R, *[plan_tool("list_documents")] * 30)
-    r = await run_agent("q", ctx, max_usd=0.0)
+    r = await run_core("q", ctx, max_usd=0.0)
     assert r.stop_reason == "budget" and r.llm_calls == 0
 
 
@@ -44,14 +44,14 @@ async def test_budget_exhausted_refuses_tool(env, monkeypatch):
     monkeypatch.setattr(nodes, "run_tool", lambda *a: ran.append(a) or "x")
     # token cap so small that router's paid reply trips the budget; plan/tool must not run
     llm.mock_script(ROUTE_R, plan_tool("list_documents"), PLAN_FINAL)
-    r = await run_agent("q", ctx, max_tokens=5)
+    r = await run_core("q", ctx, max_tokens=5)
     assert not ran and r.tool_calls == 0 and r.stop_reason == "budget"
 
 
 async def test_summarize_usage_added_to_run_budget(env, spy):
     ctx, ids = env
     llm.mock_script(ROUTE_R, plan_tool("summarize_document", doc_id=ids["alice"]), PLAN_FINAL, "ok")
-    r = await run_agent("s", ctx)
+    r = await run_core("s", ctx)
     # agent-level calls seen by the spy: router, plan, plan (+answer); summary call is extra
     assert r.llm_calls > len(spy)
 
@@ -60,7 +60,7 @@ async def test_direct_route_no_tool(env, monkeypatch):
     ctx, _ = env
     monkeypatch.setattr(nodes, "run_tool", lambda *a: pytest.fail("tool called"))
     llm.mock_script(J(route="direct", answer="hello"))
-    r = await run_agent("hi", ctx)
+    r = await run_core("hi", ctx)
     assert r.tool_calls == 0 and r.llm_calls == 1
 
 
@@ -73,7 +73,7 @@ async def test_direct_route_no_tool(env, monkeypatch):
 async def test_malformed_router_output_no_crash(env, bad):
     ctx, _ = env
     llm.mock_script(bad, PLAN_FINAL)
-    r = await run_agent("q", ctx)
+    r = await run_core("q", ctx)
     assert r.answer  # no exception; falls back to retrieve or stops
 
 
@@ -88,7 +88,7 @@ async def test_malformed_plan_output_runs_nothing(env, monkeypatch, bad):
     real = nodes.run_tool
     monkeypatch.setattr(nodes, "run_tool", lambda n, a, c: ran.append(n) or real(n, a, c))
     llm.mock_script(ROUTE_R, bad, PLAN_FINAL)
-    r = await run_agent("q", ctx)
+    r = await run_core("q", ctx)
     assert r.answer and ran == []
 
 
@@ -99,7 +99,7 @@ async def test_extra_args_rejected(env):
     nodes.run_tool = lambda n, a, c: seen.append(real(n, a, c)) or seen[-1]
     try:
         llm.mock_script(ROUTE_R, plan_tool("list_documents", bogus=1), PLAN_FINAL)
-        await run_agent("q", ctx)
+        await run_core("q", ctx)
     finally:
         nodes.run_tool = real
     assert "invalid arguments" in seen[0]
@@ -122,7 +122,7 @@ async def test_injection_text_is_escaped_and_tools_stay_allow_listed(env):
     ctx, ids = env
     _add_doc_text(ctx, ids["alice"], INJECT)
     llm.mock_script(ROUTE_R, plan_tool("search_documents", query="pricing"), PLAN_FINAL, "answer")
-    r = await run_agent("q", ctx)
+    r = await run_core("q", ctx)
     assert r.tool_calls == 1 and not r.bounded_stop
 
 
@@ -131,7 +131,7 @@ async def test_forged_doc_id_not_cited(env):
     _add_doc_text(ctx, ids["alice"], INJECT)
     llm.mock_script(ROUTE_R, plan_tool("search_documents", query="pricing"), PLAN_FINAL,
                     "see [doc_id=FORGED999]")
-    r = await run_agent("q", ctx)
+    r = await run_core("q", ctx)
     assert all(c["doc_id"] != "FORGED999" for c in r.citations)
 
 
@@ -140,7 +140,7 @@ async def test_forged_id_in_snippet_and_answer_still_not_cited(env):
     _add_doc_text(ctx, ids["alice"], INJECT)
     llm.mock_script(ROUTE_R, plan_tool("search_documents", query="pricing"), PLAN_FINAL,
                     f"[doc_id=FORGED999] and [doc_id={ids['alice']}]")
-    r = await run_agent("q", ctx)
+    r = await run_core("q", ctx)
     assert [c["doc_id"] for c in r.citations] == [ids["alice"]]
 
 
@@ -149,14 +149,14 @@ async def test_citations_only_from_this_run_evidence(env):
     # answer names bob's real doc id, but no tool returned it for alice
     llm.mock_script(ROUTE_R, plan_tool("search_documents", query="pricing"), PLAN_FINAL,
                     f"x [doc_id={ids['bob']}] [doc_id={ids['alice']}]")
-    r = await run_agent("q", ctx)
+    r = await run_core("q", ctx)
     assert [c["doc_id"] for c in r.citations] == [ids["alice"]]
 
 
 async def test_no_evidence_no_answer_call(env, spy):
     ctx, _ = env
     llm.mock_script(ROUTE_R, PLAN_FINAL)
-    r = await run_agent("q", ctx)
+    r = await run_core("q", ctx)
     assert r.answer == "I don't know." and r.citations == [] and len(spy) == 2
 
 
@@ -164,7 +164,7 @@ async def test_ctx_not_mutated(env):
     ctx, ids = env
     llm.mock_script(ROUTE_R, plan_tool("get_page_or_section", doc_id=ids["alice"], page=1),
                     PLAN_FINAL, "x")
-    r = await run_agent("q", ctx)
+    r = await run_core("q", ctx)
     assert r.tool_calls == 1
     assert ctx.budget is None and ctx.surfaced == {} and ctx.min_rerank_score == 0.0
 
@@ -192,7 +192,7 @@ async def test_concurrent_tool_runs_have_own_citations(env, monkeypatch):
                              if kw.get("schema") else None)
 
     monkeypatch.setattr(llm, "complete", fake)
-    r1, r2 = await asyncio.gather(run_agent("QA", ctx), run_agent("QB", ctx))
+    r1, r2 = await asyncio.gather(run_core("QA", ctx), run_core("QB", ctx))
     assert [c["doc_id"] for c in r1.citations] == [a1]
     assert [c["doc_id"] for c in r2.citations] == [a2]
 
@@ -201,16 +201,16 @@ async def test_citation_id_boundary(env):
     ctx, ids = env
     d = ids["alice"]
     llm.mock_script(ROUTE_R, plan_tool("list_documents"), PLAN_FINAL, f"see [doc_id={d}x] and [doc_id={d}-9]")
-    r = await run_agent("q", ctx)
+    r = await run_core("q", ctx)
     assert r.citations == []
     llm.mock_script(ROUTE_R, plan_tool("list_documents"), PLAN_FINAL, f"see [doc_id={d}].")
-    r = await run_agent("q", ctx)
+    r = await run_core("q", ctx)
     assert [c["doc_id"] for c in r.citations] == [d]
 
 
 async def test_concurrent_runs_independent(env):
     ctx, _ = env
     llm.mock_script(J(route="direct", answer="a"), J(route="direct", answer="b"))
-    r1, r2 = await asyncio.gather(run_agent("x", ctx), run_agent("y", ctx))
+    r1, r2 = await asyncio.gather(run_core("x", ctx), run_core("y", ctx))
     assert sorted([r1.answer, r2.answer]) == ["a", "b"]
     assert r1.llm_calls == 1 and r2.llm_calls == 1 and r1.usd >= 0
