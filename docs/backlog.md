@@ -41,7 +41,7 @@ Parallel after T-001: T-002, T-003, T-005. After those: T-004 and T-006 chain; T
 | T-020 | P4 | Per-session memory (needs_architect) | M | T-019 | done |
 | T-021 | P4 | Prompt-injection defences | M | T-019 | done |
 | T-022 | P4 | Rate limit, spend cap, PII-safe logs | M | T-019 | done |
-| T-023 | P4 | Golden set + eval script (eval: evaluator) | M | T-020, T-021, T-022 | approved |
+| T-023 | P4 | Golden set + eval script (eval: evaluator) | M | T-020, T-021, T-022 | done |
 
 Estimated total: 18 M x $4 + 5 S x $1.50 = $79.50 (caps, not expected spend).
 

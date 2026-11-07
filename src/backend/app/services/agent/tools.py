@@ -108,7 +108,9 @@ def _query_table(ctx: ToolContext, a: QueryTableArgs) -> str:
         return wrap(NOT_FOUND, ok=False)
     try:
         op = validate_op(TableOp.model_validate(a.model_dump(exclude={"doc_id"})))
-        return wrap(execute(load_table(data, doc.filename, op.sheet), op))
+        out = wrap(execute(load_table(data, doc.filename, op.sheet), op))
+        _note(ctx, a.doc_id, f"sheet {op.sheet}" if op.sheet else "table")  # structural citation
+        return out
     except TableError as exc:
         return wrap(str(exc), ok=False)
     except ValueError:

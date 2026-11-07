@@ -71,3 +71,6 @@ worktrees/
 logs/runs/
 .venv/
 .ruff_cache/
+
+# eval judge cache (live runs only)
+evals/.cache/

@@ -27,7 +27,7 @@ from .tools import TOOLS, ToolContext, run_tool
 log = logging.getLogger("app.agent")
 MAX_HISTORY_ITEMS = 8
 ARGS_CHARS = 300
-MAX_REWRITES = 2
+MAX_REWRITES = 1  # cheaper default (T-023): one rewrite, then abstain
 MAX_REGENERATE = 1
 REWRITE_CHARS = 200
 STRICT_NOTE = (

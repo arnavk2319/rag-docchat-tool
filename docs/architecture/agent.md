@@ -35,7 +35,7 @@ Code: `nodes.grade|rewrite|groundedness`, wired in `build_graph(d, verify)`; `gr
 
 Flow: `plan` -final-> `grade` -> relevant: `answer` -> `ground` -> END
 `grade` irrelevant (or no evidence after tools ran) -> `rewrite` -> `plan` (fresh history/citations), max
-`MAX_REWRITES=2`; a third irrelevant verdict abstains "I don't know." (no answer call).
+`MAX_REWRITES=1` (constant in `nodes.py`; was 2 until T-023: out-of-corpus questions burned ~11 steps for no gain); a second irrelevant verdict abstains "I don't know." (no answer call).
 `ground`: draft fails -> ONE regenerate (`MAX_REGENERATE=1`, stricter prompt) -> second fail -> abstain. Max 2 ground checks.
 
 Rules

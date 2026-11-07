@@ -89,14 +89,15 @@ async def test_irrelevant_rewrites_then_succeeds(env):
     assert r.answer.startswith("42") and r.citations and r.tool_calls == 2
 
 
-async def test_rewrite_capped_at_two_then_abstains(env, spy):
+async def test_rewrite_capped_at_one_then_abstains(env, spy):
+    # T-023: one rewrite (was two); the second irrelevant verdict abstains without an answer call.
     ctx, _ = env
     loop = [SEARCH, FINAL, NO]
-    llm.mock_script(ROUTE, *loop, REWRITE, *loop, REWRITE, *loop, "NEVER", "NEVER", "NEVER")
+    llm.mock_script(ROUTE, *loop, REWRITE, *loop, "NEVER", "NEVER", "NEVER")
     r = await run_agent("pricing?", ctx, verify=True, max_steps=STEPS)
     assert r.answer == "I don't know." and r.citations == [] and not r.bounded_stop
-    assert r.tool_calls == 3
-    assert sum(1 for p, _ in spy if "better standalone search query" in p) == 2
+    assert r.tool_calls == 2
+    assert sum(1 for p, _ in spy if "better standalone search query" in p) == 1
     assert not any("You write the final answer" in p for p, _ in spy)
 
 
@@ -200,7 +201,7 @@ async def test_no_shared_state_between_runs(env):
 
 
 def test_node_caps():
-    assert nodes.MAX_REWRITES == 2 and nodes.MAX_REGENERATE == 1
+    assert nodes.MAX_REWRITES == 1 and nodes.MAX_REGENERATE == 1
 
 
 # ---- review round 1 -----------------------------------------------------------------------

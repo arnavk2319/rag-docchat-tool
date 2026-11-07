@@ -1,0 +1,460 @@
+{
+  "label": "mock",
+  "note": "MOCK: scripted stand-in model + fake embedder/reranker. Proves the pipeline is wired and measured, NOT model quality. Latency is printed by the run but not stored (non-deterministic).",
+  "counts": {
+    "golden": 20,
+    "retrieval_items": 14,
+    "injection_cases": 11
+  },
+  "judge_usd": 0.025854,
+  "metrics": {
+    "recall_at_5": 0.7857,
+    "mrr": 0.75,
+    "hit_rate_at_1": 0.6429,
+    "faithfulness": 1.0,
+    "relevance": 0.8833,
+    "citation_correct": 0.7647,
+    "abstain_accuracy": 1.0,
+    "task_success": 0.75,
+    "tool_call_accuracy": 1.0,
+    "avg_steps": 7.75,
+    "loop_rate": 0.0,
+    "avg_tokens_per_request": 2960.5,
+    "avg_usd_per_request": 0.0073,
+    "max_usd_per_request": 0.0104,
+    "injection_block_rate": 1.0
+  },
+  "items": [
+    {
+      "id": "g01",
+      "type": "factual",
+      "success": false,
+      "citation_ok": false,
+      "abstained": true,
+      "steps": 10,
+      "tool_calls": 2,
+      "stop_reason": "",
+      "tokens": 1649,
+      "usd": 0.005283,
+      "tool_ok": [
+        true,
+        true
+      ],
+      "loop": false,
+      "faithfulness": null,
+      "relevance": 0.0
+    },
+    {
+      "id": "g02",
+      "type": "factual",
+      "success": true,
+      "citation_ok": true,
+      "abstained": false,
+      "steps": 7,
+      "tool_calls": 1,
+      "stop_reason": "",
+      "tokens": 4269,
+      "usd": 0.009703,
+      "tool_ok": [
+        true
+      ],
+      "loop": false,
+      "faithfulness": 1.0,
+      "relevance": 1.0
+    },
+    {
+      "id": "g03",
+      "type": "factual",
+      "success": true,
+      "citation_ok": true,
+      "abstained": false,
+      "steps": 7,
+      "tool_calls": 1,
+      "stop_reason": "",
+      "tokens": 4654,
+      "usd": 0.010421999999999999,
+      "tool_ok": [
+        true
+      ],
+      "loop": false,
+      "faithfulness": 1.0,
+      "relevance": 1.0
+    },
+    {
+      "id": "g04",
+      "type": "factual",
+      "success": false,
+      "citation_ok": false,
+      "abstained": true,
+      "steps": 10,
+      "tool_calls": 2,
+      "stop_reason": "",
+      "tokens": 3508,
+      "usd": 0.008262,
+      "tool_ok": [
+        true,
+        true
+      ],
+      "loop": false,
+      "faithfulness": null,
+      "relevance": 0.0
+    },
+    {
+      "id": "g05",
+      "type": "factual",
+      "success": false,
+      "citation_ok": false,
+      "abstained": false,
+      "steps": 7,
+      "tool_calls": 1,
+      "stop_reason": "",
+      "tokens": 4269,
+      "usd": 0.009788999999999999,
+      "tool_ok": [
+        true
+      ],
+      "loop": false,
+      "faithfulness": 1.0,
+      "relevance": 0.8333333333333334
+    },
+    {
+      "id": "g06",
+      "type": "factual",
+      "success": true,
+      "citation_ok": true,
+      "abstained": false,
+      "steps": 7,
+      "tool_calls": 1,
+      "stop_reason": "",
+      "tokens": 4058,
+      "usd": 0.009191999999999999,
+      "tool_ok": [
+        true
+      ],
+      "loop": false,
+      "faithfulness": 1.0,
+      "relevance": 1.0
+    },
+    {
+      "id": "g07",
+      "type": "factual",
+      "success": true,
+      "citation_ok": true,
+      "abstained": false,
+      "steps": 7,
+      "tool_calls": 1,
+      "stop_reason": "",
+      "tokens": 3100,
+      "usd": 0.007360000000000001,
+      "tool_ok": [
+        true
+      ],
+      "loop": false,
+      "faithfulness": 1.0,
+      "relevance": 1.0
+    },
+    {
+      "id": "g08",
+      "type": "factual",
+      "success": false,
+      "citation_ok": false,
+      "abstained": false,
+      "steps": 7,
+      "tool_calls": 1,
+      "stop_reason": "",
+      "tokens": 2899,
+      "usd": 0.0067610000000000005,
+      "tool_ok": [
+        true
+      ],
+      "loop": false,
+      "faithfulness": 1.0,
+      "relevance": 1.0
+    },
+    {
+      "id": "g09",
+      "type": "factual",
+      "success": true,
+      "citation_ok": true,
+      "abstained": false,
+      "steps": 7,
+      "tool_calls": 1,
+      "stop_reason": "",
+      "tokens": 4195,
+      "usd": 0.009950999999999998,
+      "tool_ok": [
+        true
+      ],
+      "loop": false,
+      "faithfulness": 1.0,
+      "relevance": 1.0
+    },
+    {
+      "id": "g10",
+      "type": "factual",
+      "success": true,
+      "citation_ok": true,
+      "abstained": false,
+      "steps": 7,
+      "tool_calls": 1,
+      "stop_reason": "",
+      "tokens": 3856,
+      "usd": 0.009438,
+      "tool_ok": [
+        true
+      ],
+      "loop": false,
+      "faithfulness": 1.0,
+      "relevance": 1.0
+    },
+    {
+      "id": "g11",
+      "type": "factual",
+      "success": true,
+      "citation_ok": true,
+      "abstained": false,
+      "steps": 7,
+      "tool_calls": 1,
+      "stop_reason": "",
+      "tokens": 3612,
+      "usd": 0.008709999999999999,
+      "tool_ok": [
+        true
+      ],
+      "loop": false,
+      "faithfulness": 1.0,
+      "relevance": 1.0
+    },
+    {
+      "id": "g12",
+      "type": "factual",
+      "success": true,
+      "citation_ok": true,
+      "abstained": false,
+      "steps": 7,
+      "tool_calls": 1,
+      "stop_reason": "",
+      "tokens": 4358,
+      "usd": 0.009968000000000001,
+      "tool_ok": [
+        true
+      ],
+      "loop": false,
+      "faithfulness": 1.0,
+      "relevance": 1.0
+    },
+    {
+      "id": "g13",
+      "type": "out_of_corpus",
+      "success": true,
+      "citation_ok": null,
+      "abstained": true,
+      "steps": 10,
+      "tool_calls": 2,
+      "stop_reason": "",
+      "tokens": 1580,
+      "usd": 0.0049759999999999995,
+      "tool_ok": [
+        true,
+        true
+      ],
+      "loop": false,
+      "faithfulness": null,
+      "relevance": 1.0
+    },
+    {
+      "id": "g14",
+      "type": "out_of_corpus",
+      "success": true,
+      "citation_ok": null,
+      "abstained": true,
+      "steps": 10,
+      "tool_calls": 2,
+      "stop_reason": "",
+      "tokens": 1601,
+      "usd": 0.005089,
+      "tool_ok": [
+        true,
+        true
+      ],
+      "loop": false,
+      "faithfulness": null,
+      "relevance": 1.0
+    },
+    {
+      "id": "g15",
+      "type": "out_of_corpus",
+      "success": true,
+      "citation_ok": null,
+      "abstained": true,
+      "steps": 10,
+      "tool_calls": 2,
+      "stop_reason": "",
+      "tokens": 1594,
+      "usd": 0.005038,
+      "tool_ok": [
+        true,
+        true
+      ],
+      "loop": false,
+      "faithfulness": null,
+      "relevance": 1.0
+    },
+    {
+      "id": "g16",
+      "type": "table",
+      "success": true,
+      "citation_ok": true,
+      "abstained": false,
+      "steps": 7,
+      "tool_calls": 1,
+      "stop_reason": "",
+      "tokens": 1489,
+      "usd": 0.0043029999999999995,
+      "tool_ok": [
+        true
+      ],
+      "loop": false,
+      "faithfulness": 1.0,
+      "relevance": 1.0
+    },
+    {
+      "id": "g17",
+      "type": "table",
+      "success": true,
+      "citation_ok": true,
+      "abstained": false,
+      "steps": 7,
+      "tool_calls": 1,
+      "stop_reason": "",
+      "tokens": 1522,
+      "usd": 0.004410000000000001,
+      "tool_ok": [
+        true
+      ],
+      "loop": false,
+      "faithfulness": 1.0,
+      "relevance": 1.0
+    },
+    {
+      "id": "g18",
+      "type": "table",
+      "success": true,
+      "citation_ok": true,
+      "abstained": false,
+      "steps": 7,
+      "tool_calls": 1,
+      "stop_reason": "",
+      "tokens": 1407,
+      "usd": 0.003931,
+      "tool_ok": [
+        true
+      ],
+      "loop": false,
+      "faithfulness": 1.0,
+      "relevance": 0.8333333333333334
+    },
+    {
+      "id": "g19",
+      "type": "comparison",
+      "success": false,
+      "citation_ok": true,
+      "abstained": false,
+      "steps": 7,
+      "tool_calls": 1,
+      "stop_reason": "",
+      "tokens": 2500,
+      "usd": 0.006402,
+      "tool_ok": [
+        true
+      ],
+      "loop": false,
+      "faithfulness": 1.0,
+      "relevance": 1.0
+    },
+    {
+      "id": "g20",
+      "type": "comparison",
+      "success": true,
+      "citation_ok": true,
+      "abstained": false,
+      "steps": 7,
+      "tool_calls": 1,
+      "stop_reason": "",
+      "tokens": 3090,
+      "usd": 0.007741999999999999,
+      "tool_ok": [
+        true
+      ],
+      "loop": false,
+      "faithfulness": 1.0,
+      "relevance": 1.0
+    }
+  ],
+  "checks": [
+    {
+      "metric": "recall_at_5",
+      "value": 0.7857,
+      "threshold": 0.8,
+      "op": ">=",
+      "pass": false
+    },
+    {
+      "metric": "mrr",
+      "value": 0.75,
+      "threshold": 0.6,
+      "op": ">=",
+      "pass": true
+    },
+    {
+      "metric": "faithfulness",
+      "value": 1.0,
+      "threshold": 0.85,
+      "op": ">=",
+      "pass": true
+    },
+    {
+      "metric": "relevance",
+      "value": 0.8833,
+      "threshold": 0.8,
+      "op": ">=",
+      "pass": true
+    },
+    {
+      "metric": "citation_correct",
+      "value": 0.7647,
+      "threshold": 0.9,
+      "op": ">=",
+      "pass": false
+    },
+    {
+      "metric": "task_success",
+      "value": 0.75,
+      "threshold": 0.8,
+      "op": ">=",
+      "pass": false
+    },
+    {
+      "metric": "avg_steps",
+      "value": 7.75,
+      "threshold": 8,
+      "op": "<=",
+      "pass": true
+    },
+    {
+      "metric": "injection_block_rate",
+      "value": 1.0,
+      "threshold": 0.9,
+      "op": ">=",
+      "pass": true
+    },
+    {
+      "metric": "max_usd_per_request",
+      "value": 0.0104,
+      "threshold": 0.05,
+      "op": "<=",
+      "pass": true
+    }
+  ],
+  "passed": false
+}

@@ -1,8 +1,8 @@
-"""Per-document BM25Okapi indexes persisted as JSON token lists (no pickle).
+"""Owner-wide BM25Okapi index (shared IDF) rebuilt from per-document JSON token lists (no pickle).
 
 One file per (owner, doc): {owner_id, doc_id, chunk_ids, tokens}. Files are written
-atomically (tmp + replace). The in-memory BM25Okapi objects are rebuilt from the JSON on
-construction ("startup"). Every query/delete is owner-scoped. Synchronous; use run_blocking.
+atomically (tmp + replace). The in-memory merged BM25Okapi is rebuilt lazily from the JSON-loaded
+tokens (invalidated on add/delete). Every query/delete is owner-scoped. Synchronous; use run_blocking.
 """
 
 from __future__ import annotations
@@ -44,6 +44,9 @@ class Bm25Store:
         self._dir = Path(path)
         self._dir.mkdir(parents=True, exist_ok=True)
         self._idx: dict[tuple[str, str], _DocIndex] = {}
+        # owner -> (chunk_ids, doc_of_chunk, tokens, BM25Okapi) over ALL the owner's docs, so IDF is
+        # shared and scores are comparable across documents (per-doc IDF starved small docs).
+        self._merged: dict[str, tuple[list[str], list[str], list[list[str]], BM25Okapi]] = {}
         self._lock = threading.Lock()
         self.load_all()
 
@@ -64,6 +67,7 @@ class Bm25Store:
                 log.warning("bm25 index skipped file=%s err=%s", f.name, type(e).__name__)
         with self._lock:
             self._idx = loaded
+            self._merged = {}
         return len(loaded)
 
     def add_doc(
@@ -84,6 +88,7 @@ class Bm25Store:
         idx = _DocIndex(ids, toks)
         with self._lock:
             self._idx[(owner_id, doc_id)] = idx
+            self._merged.pop(owner_id, None)
 
     def delete_doc(self, owner_id: str, doc_id: str) -> None:
         if not owner_id:
@@ -91,6 +96,7 @@ class Bm25Store:
         self._file(owner_id, doc_id).unlink(missing_ok=True)
         with self._lock:
             self._idx.pop((owner_id, doc_id), None)
+            self._merged.pop(owner_id, None)
 
     def has_doc(self, owner_id: str, doc_id: str) -> bool:
         return (owner_id, doc_id) in self._idx
@@ -107,18 +113,27 @@ class Bm25Store:
         if not q or k <= 0:
             return []
         with self._lock:
-            items = [
-                (d, ix) for (o, d), ix in self._idx.items()
-                if o == owner_id and (doc_ids is None or d in doc_ids)
-            ]
+            m = self._merged.get(owner_id)
+            if m is None:
+                ids: list[str] = []
+                owners: list[str] = []
+                toks: list[list[str]] = []
+                for (o, d), ix in sorted(self._idx.items()):
+                    if o == owner_id and ix.bm25 is not None:
+                        ids += ix.chunk_ids
+                        owners += [d] * len(ix.chunk_ids)
+                        toks += ix.tokens
+                if not ids:
+                    return []
+                m = (ids, owners, toks, BM25Okapi(toks))
+                self._merged[owner_id] = m
+        ids, owners, toks, bm = m
+        allowed = None if doc_ids is None else set(doc_ids)
         qset = set(q)
-        scored: list[tuple[str, float]] = []
-        for _d, ix in items:
-            if ix.bm25 is None:
-                continue
-            scores = ix.bm25.get_scores(q)
-            for cid, toks, sc in zip(ix.chunk_ids, ix.tokens, scores):
-                if qset.intersection(toks):
-                    scored.append((cid, float(sc)))
+        scores = bm.get_scores(q)
+        scored = [
+            (cid, float(sc)) for cid, d, t, sc in zip(ids, owners, toks, scores, strict=True)
+            if (allowed is None or d in allowed) and qset.intersection(t)
+        ]
         scored.sort(key=lambda t: (-t[1], t[0]))
         return scored[:k]
