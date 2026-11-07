@@ -63,3 +63,4 @@ def _tmp_storage(tmp_path, monkeypatch):
     """App lifespan creates the parents SQLite file; keep it out of the repo; force in-memory mode."""
     monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("DB_PATH", str(tmp_path / "db" / "docchat.db"))
+    monkeypatch.setenv("OBJECT_STORE_PATH", str(tmp_path / "objects"))

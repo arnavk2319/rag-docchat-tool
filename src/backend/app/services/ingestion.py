@@ -20,6 +20,7 @@ import threading
 from typing import Any
 
 from app.core.concurrency import run_blocking
+from app.objectstore import ObjectStore, original_key
 from app.services.chunking import chunk_document
 from app.store.bm25 import Bm25Store
 from app.store.parents import Parent, SqliteParents
@@ -56,6 +57,11 @@ def sha256_file(path: str) -> str:
         for block in iter(lambda: f.read(1 << 20), b""):
             h.update(block)
     return h.hexdigest()
+
+
+def _read_bytes(path: str) -> bytes:
+    with open(path, "rb") as f:
+        return f.read()
 
 
 def chunk_pages(pages: list[ParsedPage], doc_id: str, owner_id: str) -> tuple[list[Parent], list[Chunk]]:
@@ -102,7 +108,9 @@ class IngestionService:
         parents: SqliteParents | None = None,
         bm25: Bm25Store | None = None,
         tenant_id: str = DEFAULT_TENANT,
+        objects: ObjectStore | None = None,
     ) -> None:
+        self._objects = objects
         self._reg, self._store, self._embedder = registry, store, embedder
         self._tenant = tenant_id
         self._bm25 = bm25
@@ -145,7 +153,26 @@ class IngestionService:
         finally:
             with _inflight_lock:
                 _inflight.discard(doc.doc_id)
-        return self._reg.get(owner_id, doc.doc_id) or doc
+        final = self._reg.get(owner_id, doc.doc_id) or doc
+        if final.status == "ready":
+            await self._persist_original(final, path)
+        return final
+
+    def original_key(self, doc: Document) -> str:
+        return original_key(self._tenant, doc.doc_id, doc.filename)
+
+    async def _persist_original(self, doc: Document, path: str) -> None:
+        """Store the uploaded original (idempotent). Best effort: a store fault is logged only."""
+        if self._objects is None:
+            return
+        key = self.original_key(doc)
+        try:
+            if await self._objects.exists(self._tenant, key):
+                return
+            data = await run_blocking(_read_bytes, path)
+            await self._objects.put(self._tenant, key, data)
+        except Exception as e:  # noqa: BLE001
+            log.error("original persist failed doc=%s err=%s", doc.doc_id, type(e).__name__)
 
     async def _run(self, doc: Document, path: str) -> None:
         owner = doc.owner_id
@@ -221,5 +248,8 @@ class IngestionService:
         with _inflight_lock:
             if doc_id in _inflight:
                 raise DocumentBusyError(doc_id)
+        doc = await run_blocking(self._reg.get, owner_id, doc_id)
         await self._purge(owner_id, doc_id)
+        if self._objects is not None and doc is not None:
+            await self._objects.delete(self._tenant, self.original_key(doc))
         return await run_blocking(self._reg.delete, owner_id, doc_id)

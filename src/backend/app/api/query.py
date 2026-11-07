@@ -18,6 +18,7 @@ from ..core.config import get_settings
 from ..core.models import get_models
 from ..core.prompts import load_prompt
 from ..core.security import sanitize_output
+from ..objectstore.loader import make_table_loader
 from ..services.agent.tools import ToolContext
 from ..services.parent_lookup import expand_to_parents
 from ..services.rerank import pick_cited_children, rerank_parents
@@ -173,6 +174,7 @@ def _sse_response(
     ctx = ToolContext(
         owner_id=user, doc_ids=list(names), registry=registry, vectors=store, parents=parents,
         bm25=bm25, embed=_embed_sync, reranker=get_models().reranker,
+        table_loader=make_table_loader(getattr(request.app.state, "objects", None), registry),
     )
     sid = body.session_id
 

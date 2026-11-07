@@ -29,6 +29,12 @@ class Settings(BaseSettings):
     database_url: SecretStr = SecretStr("")  # env DATABASE_URL; set = Postgres, empty = in-memory dev mode
     db_pool_max: int = Field(default=10, gt=0)  # env DB_POOL_MAX
     db_path: str = "data/docchat.db"
+    object_store: Literal["s3", "local"] = "local"  # env OBJECT_STORE
+    object_store_path: str = "data/objects"  # env OBJECT_STORE_PATH (local impl root)
+    s3_endpoint: str = ""  # env S3_ENDPOINT (R2/MinIO; empty = AWS)
+    s3_bucket: str = ""  # env S3_BUCKET
+    s3_access_key_id: SecretStr = SecretStr("")  # env S3_ACCESS_KEY_ID
+    s3_secret_access_key: SecretStr = SecretStr("")  # env S3_SECRET_ACCESS_KEY
     embed_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     rerank_model: str = "BAAI/bge-reranker-base"
     min_rerank_score: float = 0.0  # env MIN_RERANK_SCORE; abstain if top rerank score is below

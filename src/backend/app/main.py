@@ -12,6 +12,7 @@ from .core.config import get_settings
 from .core.limits import RateLimiter, SpendLedger
 from .core.llm import validate_provider
 from .core.models import load_models, models_fake, models_loaded, reset_models
+from .objectstore import build_object_store
 from .services.ingestion import IngestionService
 from .store.bm25 import Bm25Store
 from .store.parents import SqliteParents
@@ -87,9 +88,13 @@ async def lifespan(app: FastAPI):
             )
         )
         created.append("ledger")
+    if getattr(state, "objects", None) is None:
+        state.objects = build_object_store(settings)
+        created.append("objects")
     if getattr(state, "ingestion", None) is None:
         state.ingestion = IngestionService(
-            state.registry, state.store.inner, parents=state.parents, bm25=state.bm25
+            state.registry, state.store.inner, parents=state.parents, bm25=state.bm25,
+            objects=state.objects,
         )
         created.append("ingestion")
     try:
