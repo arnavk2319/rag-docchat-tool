@@ -1,6 +1,6 @@
 # Status (rolling, max 60 lines; orchestrator rewrites after every stage)
 
-Updated: 2026-11-07 · Mode: autopilot · Phase: PAUSED at day budget cap after T-007 (P0: 8 of 9 done)
+Updated: 2026-11-07 · Mode: autopilot · Phase: P0 complete (9/9); P1 in progress (T-009, T-010 done)
 
 ## Decisions made
 - Spec (docs/spec.md): P0-P4 backend only. Later items in docs/backlog.md.
@@ -10,15 +10,15 @@ Updated: 2026-11-07 · Mode: autopilot · Phase: PAUSED at day budget cap after 
 - No Anthropic key; build and all tests run on LLM_PROVIDER=mock. No paid API is called by agents.
 
 ## Progress
-- Done on dev (524 tests): T-001 uv layout, T-002 config + llm wrapper, T-003 upload hardening, T-004 model registry + parsers, T-005 SQLite registry, T-006 ingestion + embedded Chroma, T-007 /v1 endpoints (ADR-0002), T-009 parent-child chunking, T-018 Ollama provider.
+- Done on dev (546 tests): T-001..T-010 and T-018. Latest: T-008 upload hardening (413/415, xls dropped, ADR-0002 amended), T-010 hybrid BM25+dense RRF.
 - In flight: nothing. No open worktrees or branches.
-- Next (ready now): T-008 upload hardening (S), T-010 hybrid retrieval (M; includes the doc_ids list filter), then T-011 rerank/citations/abstain, T-012 map-reduce summaries. Run `/autopilot` in a FRESH session after the daily budget resets.
+- Next (ready now): T-011 rerank/citations/abstain (M), T-012 map-reduce summaries. Use `node --experimental-strip-types scripts/agentic/log-decision.ts` (plain `node` fails on this Node).
 
 ## Budget
-- BUDGET: day spend $29.48 of $30.00 (98%) on 2026-11-07; week $29.48 of $90 (33%). Autopilot paused on purpose at a ticket boundary. Raise `day_usd` in .claude/budgets.json (human-only) to continue today.
+- BUDGET: day cap raised by the human in budgets.json; guard-budget tracks spend since resume.
 
 ## Open (human)
-- Add to .env.example (agents cannot touch it): EMBED_MODEL=sentence-transformers/all-MiniLM-L6-v2, RERANK_MODEL=BAAI/bge-reranker-base, MODELS_FAKE= (test-only, leave empty), OLLAMA_AGENT_MODEL=llama3.1:8b, OLLAMA_FAST_MODEL=llama3.2:3b.
+- .env.example: human pasted the 5 model vars; still to document: MAX_UPLOAD_MB semantics (can only lower the 10 MB cap).
 - Live LLM later: ANTHROPIC_API_KEY in .env (or Ollama). T-023 evals run on scripted mock answers until then.
 - Git history still holds the personal citizenship documents (Later).
 - ADR-0001/0002 are still "proposed": review at Gate B.

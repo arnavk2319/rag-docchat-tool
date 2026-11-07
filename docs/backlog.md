@@ -7,7 +7,7 @@ Only the human (via Gate A) moves a ticket from draft to approved.
 
 | Phase | Name | Tickets | Status |
 | ----- | ---- | ------- | ------ |
-| P0 | Foundation, bug fixes, 5 endpoints, llm wrapper | T-001..T-008 | approved |
+| P0 | Foundation, bug fixes, 5 endpoints, llm wrapper | T-001..T-008 | done |
 | P1 | Retrieval quality: chunking, hybrid, rerank, citations, summarization | T-009..T-012 | approved |
 | P2 | Read-only tools | T-013..T-015 | approved |
 | P3 | LangGraph agent, Ollama, SSE | T-016..T-019 | approved |
@@ -26,9 +26,9 @@ Parallel after T-001: T-002, T-003, T-005. After those: T-004 and T-006 chain; T
 | T-005 | P0 | SQLite document registry | S | T-001 | done |
 | T-006 | P0 | Ingestion + embedded Chroma with doc_id metadata | M | T-004, T-005 | done |
 | T-007 | P0 | Five endpoints (needs_architect) | M | T-002, T-006 | done |
-| T-008 | P0 | Upload validation hardening | S | T-007 | approved |
+| T-008 | P0 | Upload validation hardening | S | T-007 | done |
 | T-009 | P1 | Parent-child chunking | M | T-006 | done |
-| T-010 | P1 | Hybrid BM25 + dense RRF | M | T-009 | approved |
+| T-010 | P1 | Hybrid BM25 + dense RRF | M | T-009 | done |
 | T-011 | P1 | Rerank, abstain, citations | M | T-004, T-010 | approved |
 | T-012 | P1 | Map-reduce summarization + compression | M | T-007, T-009 | approved |
 | T-013 | P2 | Tool framework + search/list/get_page tools | M | T-011 | approved |
@@ -59,3 +59,5 @@ Estimated total: 18 M x $4 + 5 S x $1.50 = $79.50 (caps, not expected spend).
 - PDF safety checks (encrypted, embedded JavaScript/files) using pypdf, if wanted; the unused PyPDF2/VirusTotal prototype is deleted in T-004.
 - Streaming request-body guard (ASGI middleware) so the 50 MB total and 10-file limits are enforced before Starlette spools the multipart body, including chunked requests (reviewer note on T-007; same root cause as the proxy body-size item).
 - Move GET /v1/documents pagination into SQL LIMIT/OFFSET instead of slicing in memory.
+- Backfill BM25 indexes for documents ingested before T-010 (they stay dense-only until re-uploaded); document `MAX_UPLOAD_MB` (lowers the 10 MB cap, never raises it) in `.env.example` (human).
+- Vector store `query` counts matches via `get(include=[])`; swap for a cheaper count. BM25-only hits carry placeholder distance 1.0 and per-doc idf is not cross-doc comparable: revisit in T-011 abstention.
