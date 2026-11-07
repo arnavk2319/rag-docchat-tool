@@ -55,3 +55,5 @@ Estimated total: 18 M x $4 + 5 S x $1.50 = $79.50 (caps, not expected spend).
 - Real auth replacing the `X-User-Id` header
 - Git history rewrite for personal documents (human task)
 - Rotate the exposed `.env` OpenAI key (human task)
+- Reverse-proxy request body-size limit (Starlette spools multipart bodies before our 10 MB streaming cap runs); part of the environments/deploy phase.
+- PDF safety checks (encrypted, embedded JavaScript/files) using pypdf, if wanted; the unused PyPDF2/VirusTotal prototype is deleted in T-004.
