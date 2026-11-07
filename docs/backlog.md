@@ -24,7 +24,7 @@ Parallel after T-001: T-002, T-003, T-005. After those: T-004 and T-006 chain; T
 | T-003 | P0 | Fix prototype bugs | S | T-001 | done |
 | T-004 | P0 | Model registry in lifespan + threadpool | M | T-002, T-003 | done |
 | T-005 | P0 | SQLite document registry | S | T-001 | done |
-| T-006 | P0 | Ingestion + embedded Chroma with doc_id metadata | M | T-004, T-005 | approved |
+| T-006 | P0 | Ingestion + embedded Chroma with doc_id metadata | M | T-004, T-005 | done |
 | T-007 | P0 | Five endpoints (needs_architect) | M | T-002, T-006 | approved |
 | T-008 | P0 | Upload validation hardening | S | T-007 | approved |
 | T-009 | P1 | Parent-child chunking | M | T-006 | approved |
