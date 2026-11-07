@@ -2,7 +2,7 @@ import pytest
 from app.core.prompts import PROMPTS_DIR, PromptError, load_prompt, parse_prompt
 
 
-@pytest.mark.parametrize("name,tier", [("answer", "agent"), ("summarize", "fast")])
+@pytest.mark.parametrize("name,tier", [("answer", "agent"), ("summarize", "fast"), ("compare", "fast")])
 def test_shipped_prompts_load(name, tier):
     p = load_prompt(name)
     assert p.id == name and p.version >= 1 and p.model_tier == tier

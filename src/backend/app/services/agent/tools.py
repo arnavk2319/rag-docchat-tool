@@ -8,20 +8,28 @@ Tools are synchronous; the agent loop calls them via run_blocking.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+import asyncio
+import concurrent.futures
+from collections.abc import Callable, Coroutine, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from ...core import llm
+from ...core.prompts import load_prompt
 from ..parent_lookup import expand_to_parents
 from ..rerank import pick_cited_children, rerank_parents
 from ..retrieval import TOP_N, hybrid_search
+from ..summarization import DocText, summarize_documents
 
 MAX_RESULT_CHARS = 6000
 MAX_SNIPPET_CHARS = 1200
 MAX_LIST_DOCS = 50
 MAX_TOP_K = 8
+MAX_COMPARE_DOCS = 5
+COMPARE_PER_DOC = 3
+COMPARE_EXCERPT_CHARS = 1000
 NOT_FOUND = "not found"
 _ESC = str.maketrans({"<": "&lt;", ">": "&gt;", "&": "&amp;"})
 
@@ -72,6 +80,15 @@ class GetPageArgs(_Args):
     doc_id: str = Field(min_length=1, max_length=100)
     page: int | None = Field(default=None, ge=1)
     section: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class SummarizeArgs(_Args):
+    doc_id: str = Field(min_length=1, max_length=100)
+
+
+class CompareArgs(_Args):
+    doc_ids: list[str] = Field(min_length=2, max_length=MAX_COMPARE_DOCS)
+    focus: str = Field(default="main points", min_length=1, max_length=300)
 
 
 def _visible(ctx: ToolContext, doc_id: str) -> Any | None:
@@ -149,6 +166,49 @@ def _get_page(ctx: ToolContext, a: GetPageArgs) -> str:
     return wrap("\n\n".join(p.text for p in ps))
 
 
+def _run_async[T](coro: Coroutine[Any, Any, T]) -> T:
+    """Run a coroutine from a sync tool (worker thread); use a helper thread if a loop is running."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+        return ex.submit(asyncio.run, coro).result()
+
+
+def _summarize(ctx: ToolContext, a: SummarizeArgs) -> str:
+    doc = _visible(ctx, a.doc_id)
+    if doc is None or doc.status != "ready":
+        return wrap(NOT_FOUND, ok=False)
+    ps = ctx.parents.list_doc_parents(ctx.owner_id, a.doc_id)
+    res = _run_async(summarize_documents([DocText(doc.filename, [p.text for p in ps])]))
+    note = " (partial: cost cap reached)" if res.partial else ""
+    return wrap(f"[doc_id={a.doc_id}]{note}\n{res.summary}")
+
+
+def _compare(ctx: ToolContext, a: CompareArgs) -> str:
+    ids = list(dict.fromkeys(a.doc_ids))
+    docs = [_visible(ctx, i) for i in ids]
+    if len(ids) < 2 or any(d is None or d.status != "ready" for d in docs):
+        return wrap(NOT_FOUND, ok=False)
+    emb = ctx.embed(a.focus)
+    blocks: list[str] = []
+    for d in docs:
+        hits = hybrid_search(
+            ctx.owner_id, a.focus, emb, ctx.vectors, ctx.bm25, [d.doc_id], COMPARE_PER_DOC
+        )
+        cands = expand_to_parents(ctx.owner_id, hits, ctx.parents)
+        ranked = rerank_parents(ctx.reranker, a.focus, cands, COMPARE_PER_DOC)
+        text = "\n".join(ph.parent.text[:COMPARE_EXCERPT_CHARS] for ph, _ in ranked)
+        blocks.append(f'<excerpt doc_id="{d.doc_id}" file="{escape(d.filename)}">\n'
+                      f"{escape(text) or '(no relevant text)'}\n</excerpt>")
+    prompt = load_prompt("compare").render(focus=escape(a.focus), excerpts="\n".join(blocks))
+    res = _run_async(llm.complete(
+        [{"role": "user", "content": prompt}], model_role="fast", max_tokens=500))
+    cites = " ".join(f"[doc_id={d.doc_id}]" for d in docs)
+    return wrap(f"{res.text.strip()}\nSources: {cites}")
+
+
 @dataclass(frozen=True)
 class Tool:
     name: str
@@ -163,6 +223,8 @@ TOOLS: dict[str, Tool] = {
         Tool("search_documents", "Hybrid search over the user's documents.", SearchArgs, _search),
         Tool("list_documents", "List the user's documents.", ListArgs, _list),
         Tool("get_page_or_section", "Fetch a page or section of a document.", GetPageArgs, _get_page),
+        Tool("summarize_document", "Summarize one document.", SummarizeArgs, _summarize),
+        Tool("compare_documents", "Compare 2-5 documents.", CompareArgs, _compare),
     )
 }
 

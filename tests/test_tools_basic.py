@@ -47,7 +47,8 @@ def test_unknown_tool_and_bad_args(tmp_path):
     assert 'status="error"' in run_tool("rm_rf", {}, ctx)
     assert "invalid arguments" in run_tool("get_page_or_section", {"doc_id": 1}, ctx)
     assert "invalid arguments" in run_tool("list_documents", {"x": 1}, ctx)
-    assert set(TOOLS) == {"search_documents", "list_documents", "get_page_or_section"}
+    assert set(TOOLS) == {"search_documents", "list_documents", "get_page_or_section",
+                          "summarize_document", "compare_documents"}
 
 
 def test_list_is_owner_scoped(tmp_path):
