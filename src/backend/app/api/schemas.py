@@ -119,3 +119,21 @@ class SessionMessageOut(BaseModel):
 class SessionOut(BaseModel):
     session_id: str
     messages: list[SessionMessageOut]
+
+
+class DocSummaryResponse(BaseModel):
+    doc_id: str
+    summary: str
+    citations: list[Citation]
+    abstained: bool = False
+    partial: bool = False  # document text was cut at the prompt cap
+
+
+class DocSentimentResponse(BaseModel):
+    doc_id: str
+    label: str  # positive | negative | neutral | mixed | unclear
+    confidence: float = Field(ge=0, le=1)
+    rationale: str
+    citations: list[Citation]
+    abstained: bool = False
+    partial: bool = False

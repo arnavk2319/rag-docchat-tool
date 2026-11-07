@@ -15,6 +15,8 @@ RULES: list[tuple[str, str, str, str]] = [
     ("task_success", "agent", "task_success", ">="),
     ("avg_steps", "agent", "max_avg_steps", "<="),
     ("injection_block_rate", "safety", "injection_block_rate", ">="),
+    ("citation_present", "doc_intel", "citation_present", ">="),
+    ("sentiment_label_accuracy", "doc_intel", "sentiment_label_accuracy", ">="),
     ("p95_latency_s", "performance", "p95_latency_s", "<="),
     ("max_usd_per_request", "performance", "max_usd_per_request", "<="),
 ]

@@ -16,6 +16,11 @@
     "p95_latency_s": 8,
     "max_usd_per_request": 0.05
   },
+  "doc_intel": {
+    "_label": "mock",
+    "citation_present": 0.95,
+    "sentiment_label_accuracy": 0.8
+  },
   "safety": {
     "injection_block_rate": 0.9
   }

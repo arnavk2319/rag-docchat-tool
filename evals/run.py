@@ -59,8 +59,60 @@ def norm(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip().lower()
 
 
-def load_golden(path: Path = EVALS / "golden.jsonl") -> list[dict[str, Any]]:
+DOC_INTEL_TYPES = ("summary", "sentiment")  # T-030 items: inline text, no retrieval/agent
+
+
+def _load_all(path: Path) -> list[dict[str, Any]]:
     return [json.loads(ln) for ln in path.read_text().splitlines() if ln.strip()]
+
+
+def load_golden(path: Path = EVALS / "golden.jsonl") -> list[dict[str, Any]]:
+    """Agent/retrieval items only (doc-intel items are in load_docintel)."""
+    return [g for g in _load_all(path) if g["type"] not in DOC_INTEL_TYPES]
+
+
+def load_docintel(path: Path = EVALS / "golden.jsonl") -> list[dict[str, Any]]:
+    return [g for g in _load_all(path) if g["type"] in DOC_INTEL_TYPES]
+
+
+POS = {"wonderful", "friendly", "helpful", "spotless", "excellent", "loved", "love", "delighted",
+       "fantastic", "delicious", "lovely", "great", "happily", "reliable"}
+NEG = {"terrible", "dirty", "rude", "disappointed", "awful", "cold", "useless", "poor", "frustrating",
+       "waste", "broke", "never"}
+
+
+def lex_label(text: str) -> str:
+    """Mock stand-in classifier (lexicon). Proves wiring, not model quality."""
+    ws = set(re.findall(r"[a-z]+", text.lower()))
+    p, n = bool(ws & POS), bool(ws & NEG)
+    return "mixed" if p and n else "positive" if p else "negative" if n else "neutral"
+
+
+async def doc_intel_rows(golden: list[dict[str, Any]], scripted: bool) -> list[dict[str, Any]]:
+    """Run each item through the real docintel service (llm wrapper; mock script when scripted)."""
+    from app.core import llm
+    from app.services.docintel import classify_doc, summarize_doc
+    from app.store.parents import Parent
+
+    rows = []
+    for g in golden:
+        text = g["text"]
+        parent = Parent(owner_id=OWNER, doc_id=g["id"], parent_id=f"{g['id']}-0", char_start=0,
+                        char_end=len(text), text=text)
+        if g["type"] == "sentiment":
+            llm.mock_script(*([J(label=lex_label(text), confidence=0.8, rationale="lexicon",
+                                 sections=[0], insufficient=False)] if scripted else []))
+            r = await classify_doc([parent])
+            ok = r.abstained if g["abstain"] else r.label == g["expected"]
+        else:
+            first = re.split(r"(?<=[.!?])\s+", text)[0]
+            llm.mock_script(*([J(summary=first, sections=[0], insufficient=False)] if scripted else []))
+            r = await summarize_doc([parent])
+            ok = r.abstained if g["abstain"] else not r.abstained
+        llm.mock_script()
+        rows.append({"id": g["id"], "type": g["type"], "abstain": g["abstain"], "ok": ok,
+                     "abstained": r.abstained, "cited": bool(r.cited)})
+    return rows
 
 
 class JudgeOut(BaseModel):
@@ -354,6 +406,8 @@ async def injection_rate(tmp: Path) -> tuple[float, int]:
     """Reuse the T-021 payload suite (tests/test_injection.py): 10 payloads + poisoned session."""
     import pytest
 
+    if str(ROOT / "tests") not in sys.path:  # test_injection imports its sibling helper `authutil`
+        sys.path.insert(0, str(ROOT / "tests"))
     spec = importlib.util.spec_from_file_location("eval_injection_suite", ROOT / "tests/test_injection.py")
     assert spec and spec.loader
     mod = importlib.util.module_from_spec(spec)
@@ -382,6 +436,7 @@ async def compute(mode: str) -> dict[str, Any]:
         ret = [x for x in (retrieval_row(i, ctx, ids) for i in golden) if x]
         rows = await run_items(ctx, ids, golden, scripted, cache, spend)
         inj, n_inj = await injection_rate(tmp)
+        di = await doc_intel_rows(load_docintel(), scripted)
     if not scripted:
         cache_path.parent.mkdir(exist_ok=True)
         cache_path.write_text(json.dumps(cache))
@@ -407,12 +462,17 @@ async def compute(mode: str) -> dict[str, Any]:
         "avg_usd_per_request": M.mean([r["usd"] for r in rows]),
         "max_usd_per_request": max(r["usd"] for r in rows),
         "injection_block_rate": inj,
+        "citation_present": M.mean([float(r["cited"]) for r in di if not r["abstain"]]),
+        "sentiment_label_accuracy": M.mean(
+            [float(r["ok"]) for r in di if r["type"] == "sentiment" and not r["abstain"]]),
+        "doc_intel_abstain_accuracy": M.mean([float(r["ok"]) for r in di if r["abstain"]]),
     }
     return {
         "label": mode,
         "note": ("MOCK: scripted stand-in model + fake embedder/reranker. Proves the pipeline is "
                  "wired and measured, NOT model quality." if scripted else "LIVE run"),
-        "counts": {"golden": len(golden), "retrieval_items": len(ret), "injection_cases": n_inj},
+        "counts": {"golden": len(golden), "retrieval_items": len(ret), "injection_cases": n_inj,
+                   "doc_intel": len(di)},
         "judge_usd": round(sum(spend), 6),
         "metrics": {k: round(v, 4) for k, v in metrics.items()},
         "items": rows,

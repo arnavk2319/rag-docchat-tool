@@ -4,7 +4,8 @@
   "counts": {
     "golden": 20,
     "retrieval_items": 14,
-    "injection_cases": 11
+    "injection_cases": 11,
+    "doc_intel": 12
   },
   "judge_usd": 0.025854,
   "metrics": {
@@ -22,7 +23,10 @@
     "avg_tokens_per_request": 2960.5,
     "avg_usd_per_request": 0.0073,
     "max_usd_per_request": 0.0104,
-    "injection_block_rate": 1.0
+    "injection_block_rate": 1.0,
+    "citation_present": 1.0,
+    "sentiment_label_accuracy": 1.0,
+    "doc_intel_abstain_accuracy": 1.0
   },
   "items": [
     {
@@ -445,6 +449,20 @@
       "metric": "injection_block_rate",
       "value": 1.0,
       "threshold": 0.9,
+      "op": ">=",
+      "pass": true
+    },
+    {
+      "metric": "citation_present",
+      "value": 1.0,
+      "threshold": 0.95,
+      "op": ">=",
+      "pass": true
+    },
+    {
+      "metric": "sentiment_label_accuracy",
+      "value": 1.0,
+      "threshold": 0.8,
       "op": ">=",
       "pass": true
     },
