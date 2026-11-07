@@ -89,4 +89,4 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       - run: uv export --frozen --no-hashes --no-emit-project -o requirements-audit.txt
-      - run: uvx pip-audit --disable-pip -r requirements-audit.txt
+      - run: uvx pip-audit --no-deps --disable-pip -r requirements-audit.txt
