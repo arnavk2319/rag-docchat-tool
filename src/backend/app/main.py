@@ -18,7 +18,7 @@ app = FastAPI(lifespan=lifespan)
 
 @app.exception_handler(HTTPException)
 async def http_exception_handle_logging(request, exc):
-    logger.error(f"HTTPException: ${exc.status_code} ${exc.detail}")
+    logger.error("HTTPException: %s %s", exc.status_code, exc.detail)
     return await http_exception_handler(request, exc)
 
 # Prototype router disabled until T-003/T-004 replace its langchain-based code.
