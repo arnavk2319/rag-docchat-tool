@@ -11,6 +11,7 @@ from .core.config import get_settings
 from .core.llm import validate_provider
 from .core.models import load_models, models_fake, models_loaded, reset_models
 from .services.ingestion import IngestionService
+from .store.bm25 import Bm25Store
 from .store.chroma import ChromaStore
 from .store.parents import SqliteParents
 from .store.registry import SqliteRegistry
@@ -37,8 +38,14 @@ async def lifespan(app: FastAPI):
     if getattr(state, "parents", None) is None:
         state.parents = await run_blocking(SqliteParents, settings.db_path)
         created.append("parents")
+    if getattr(state, "bm25", None) is None:
+        # Rebuilt from the persisted JSON token files at startup.
+        state.bm25 = await run_blocking(Bm25Store, f"{settings.chroma_dir}_bm25")
+        created.append("bm25")
     if getattr(state, "ingestion", None) is None:
-        state.ingestion = IngestionService(state.registry, state.store, parents=state.parents)
+        state.ingestion = IngestionService(
+            state.registry, state.store, parents=state.parents, bm25=state.bm25
+        )
         created.append("ingestion")
     try:
         yield

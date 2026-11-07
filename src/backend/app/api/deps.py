@@ -11,6 +11,7 @@ from typing import Annotated, NewType
 from fastapi import Depends, Header, HTTPException, Request
 
 from ..services.ingestion import IngestionService
+from ..store.bm25 import Bm25Store
 from ..store.chroma import VectorStore
 from ..store.parents import SqliteParents
 from ..store.registry import Registry
@@ -49,6 +50,10 @@ def get_parents(request: Request) -> SqliteParents:
     return request.app.state.parents
 
 
+def get_bm25(request: Request) -> Bm25Store | None:
+    return getattr(request.app.state, "bm25", None)
+
+
 def get_ingestion(request: Request) -> IngestionService:
     return request.app.state.ingestion
 
@@ -57,6 +62,7 @@ CurrentUser = Annotated[UserId, Depends(current_user)]
 RegistryDep = Annotated[Registry, Depends(get_registry)]
 StoreDep = Annotated[VectorStore, Depends(get_store)]
 ParentsDep = Annotated[SqliteParents, Depends(get_parents)]
+Bm25Dep = Annotated[Bm25Store | None, Depends(get_bm25)]
 IngestionDep = Annotated[IngestionService, Depends(get_ingestion)]
 
 

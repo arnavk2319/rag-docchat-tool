@@ -1,4 +1,4 @@
-"""POST /v1/query: single-shot dense retrieval + one `agent` LLM call, with citations.
+"""POST /v1/query: single-shot hybrid retrieval + one `agent` LLM call, with citations.
 
 `session_id` and `stream` are accepted in the schema but ignored here: sessions arrive in
 T-020 and SSE streaming in T-019 (ADR-0002 sections 4-5). `abstained` is true only when
@@ -11,7 +11,15 @@ from ..core import llm
 from ..core.concurrency import run_blocking
 from ..core.prompts import load_prompt
 from ..services.parent_lookup import expand_to_parents
-from .deps import CurrentUser, ParentsDep, RegistryDep, StoreDep, json_body_limit
+from ..services.retrieval import hybrid_search
+from .deps import (
+    Bm25Dep,
+    CurrentUser,
+    ParentsDep,
+    RegistryDep,
+    StoreDep,
+    json_body_limit,
+)
 from .rag import citation_for, embed_one, escape, resolve_ready_docs
 from .schemas import ErrorBody, QueryRequest, QueryResponse
 
@@ -32,7 +40,12 @@ IDK = "I don't know."
     },
 )
 async def query(
-    body: QueryRequest, user: CurrentUser, registry: RegistryDep, store: StoreDep, parents: ParentsDep
+    body: QueryRequest,
+    user: CurrentUser,
+    registry: RegistryDep,
+    store: StoreDep,
+    parents: ParentsDep,
+    bm25: Bm25Dep,
 ) -> QueryResponse:
     if body.doc_ids is not None:
         docs = await resolve_ready_docs(registry, user, list(dict.fromkeys(body.doc_ids)))
@@ -43,15 +56,10 @@ async def query(
         return QueryResponse(answer=IDK, citations=[], abstained=True)
 
     vec = await embed_one(body.question)
-    if body.doc_ids is not None:
-        # per-doc loop until the list filter lands in T-010
-        hits = []
-        for did in names:
-            hits += await run_blocking(store.query, user, vec, body.top_k, did)
-    else:
-        hits = await run_blocking(store.query, user, vec, body.top_k * 2)
-    hits = [h for h in hits if h.metadata.get("doc_id") in names]
-    hits = sorted(hits, key=lambda h: h.distance)[: body.top_k]
+    # Hybrid (BM25 + dense, RRF), always scoped to the resolved ready docs of this owner.
+    hits = await run_blocking(
+        hybrid_search, user, body.question, vec, store, bm25, list(names), body.top_k
+    )
     if not hits:
         return QueryResponse(answer=IDK, citations=[], abstained=True)
 

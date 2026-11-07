@@ -37,17 +37,25 @@ class VectorStore(Protocol):
         embedding: Sequence[float],
         k: int = 5,
         doc_id: str | None = None,
+        doc_ids: Sequence[str] | None = None,
     ) -> list[Hit]: ...
+    def get(self, owner_id: str, chunk_ids: Sequence[str]) -> list[Hit]: ...
     def delete_doc(self, owner_id: str, doc_id: str) -> None: ...
     def count(self, owner_id: str, doc_id: str | None = None) -> int: ...
 
 
-def _where(owner_id: str, doc_id: str | None) -> dict[str, Any]:
+def _where(
+    owner_id: str, doc_id: str | None, doc_ids: Sequence[str] | None = None
+) -> dict[str, Any]:
+    """Owner filter is always present. `doc_id` (single) and `doc_ids` (list, `$in`) combine by AND."""
     if not owner_id:
         raise ValueError("owner_id is required")
-    if doc_id is None:
-        return {"owner_id": owner_id}
-    return {"$and": [{"owner_id": owner_id}, {"doc_id": doc_id}]}
+    clauses: list[dict[str, Any]] = [{"owner_id": owner_id}]
+    if doc_id is not None:
+        clauses.append({"doc_id": doc_id})
+    if doc_ids is not None:
+        clauses.append({"doc_id": {"$in": list(doc_ids)}})
+    return clauses[0] if len(clauses) == 1 else {"$and": clauses}
 
 
 class ChromaStore:
@@ -80,9 +88,11 @@ class ChromaStore:
             metadatas=list(metadatas),
         )
 
-    def query(self, owner_id, embedding, k=5, doc_id=None) -> list[Hit]:
-        where = _where(owner_id, doc_id)
-        n = self.count(owner_id, doc_id)
+    def query(self, owner_id, embedding, k=5, doc_id=None, doc_ids=None) -> list[Hit]:
+        where = _where(owner_id, doc_id, doc_ids)
+        if doc_ids is not None and not doc_ids:
+            return []  # empty list means "no documents", never "all documents"
+        n = len(self._col.get(where=where, include=[])["ids"])
         if n == 0 or k <= 0:
             return []
         res = self._col.query(
@@ -96,6 +106,19 @@ class ChromaStore:
             for i, t, m, d in zip(
                 res["ids"][0], res["documents"][0], res["metadatas"][0], res["distances"][0]
             )
+        ]
+
+    def get(self, owner_id, chunk_ids) -> list[Hit]:
+        """Fetch chunks by id, owner-filtered; unknown/foreign ids are skipped. distance=1.0."""
+        ids = list(dict.fromkeys(chunk_ids))
+        if not ids:
+            return []
+        res = self._col.get(
+            ids=ids, where=_where(owner_id, None), include=["documents", "metadatas"]
+        )
+        return [
+            Hit(chunk_id=i, text=t, metadata=dict(m), distance=1.0)
+            for i, t, m in zip(res["ids"], res["documents"], res["metadatas"])
         ]
 
     def delete_doc(self, owner_id, doc_id) -> None:
