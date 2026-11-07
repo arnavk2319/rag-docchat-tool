@@ -30,7 +30,11 @@ class LLMError(Exception):
 
 
 class BudgetExceeded(LLMError):
-    pass
+    """Cap hit. If raised by Budget.charge inside complete(), `result` is the already-paid LLMResult."""
+
+    def __init__(self, *args: object, result: "LLMResult | None" = None) -> None:
+        super().__init__(*args)
+        self.result = result
 
 
 class LLMValidationError(LLMError):
@@ -323,7 +327,16 @@ async def complete[T: BaseModel](
             },
         )
         if budget:
-            budget.charge(tin + tout, usd)
+            try:
+                budget.charge(tin + tout, usd)
+            except BudgetExceeded as e:
+                try:
+                    pre = _parse(text, schema) if schema is not None else None
+                except (ValidationError, ValueError):
+                    pre = None
+                e.result = LLMResult(text, model, tin, tout, usd, latency, pre)
+                log.warning("budget exceeded after paid call", extra={"run_id": run_id, "usd": round(usd, 6)})
+                raise
         if schema is None:
             return LLMResult(text, model, tin, tout, usd, latency)
         try:

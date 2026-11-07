@@ -37,6 +37,7 @@ class SummaryResult:
     cached: bool = False
     llm_calls: int = 0
     usd: float = 0.0
+    tokens: int = 0
 
 
 def clear_cache() -> None:
@@ -82,7 +83,7 @@ def _remember(key: str, summary: str) -> None:
         _cache.popitem(last=False)
 
 
-async def summarize_documents(docs: Sequence[DocText]) -> SummaryResult:
+async def summarize_documents(docs: Sequence[DocText], max_usd: float | None = None) -> SummaryResult:
     s = get_settings()
     key = _cache_key(docs, s.summary_reduce_role, s.summary_compress, s.summary_batch_chars)
     if key in _cache:
@@ -102,7 +103,7 @@ async def summarize_documents(docs: Sequence[DocText]) -> SummaryResult:
     budget = Budget(
         max_steps=3 * len(work) + 2 * s.summary_max_batches + 4,
         max_tokens=10_000_000,
-        max_usd=s.summary_max_usd,
+        max_usd=s.summary_max_usd if max_usd is None else min(s.summary_max_usd, max_usd),
     )
     map_p, red_p = load_prompt("summarize_map"), load_prompt("summarize_reduce")
     partials: list[tuple[str, str]] = []
@@ -128,7 +129,7 @@ async def summarize_documents(docs: Sequence[DocText]) -> SummaryResult:
         summary = "\n".join(p for _, p in partials) or "Summary unavailable: cost cap reached."
     if not partial_flag:
         _remember(key, summary)
-    return SummaryResult(summary, partial=partial_flag, llm_calls=budget.steps, usd=budget.usd)
+    return SummaryResult(summary, partial=partial_flag, llm_calls=budget.steps, usd=budget.usd, tokens=budget.tokens)
 
 
 async def _reduce(

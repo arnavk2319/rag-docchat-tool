@@ -34,7 +34,7 @@ Parallel after T-001: T-002, T-003, T-005. After those: T-004 and T-006 chain; T
 | T-013 | P2 | Tool framework + search/list/get_page tools | M | T-011 | done |
 | T-014 | P2 | summarize_document, compare_documents tools | S | T-012, T-013 | done |
 | T-015 | P2 | query_table tool | M | T-013 | done |
-| T-016 | P3 | Agent graph core + bounds | M | T-014, T-015 | approved |
+| T-016 | P3 | Agent graph core + bounds | M | T-014, T-015 | done |
 | T-017 | P3 | Grade, rewrite, groundedness | M | T-016 | approved |
 | T-018 | P3 | Ollama provider | S | T-002 | done |
 | T-019 | P3 | Agent SSE endpoint (needs_architect) | M | T-017 | approved |
@@ -66,3 +66,4 @@ Estimated total: 18 M x $4 + 5 S x $1.50 = $79.50 (caps, not expected spend).
 - REQUIRED before the agent endpoint (T-019) is useful: original csv/xlsx uploads are not persisted, so query_table has no table_loader and returns not found in production. Persist originals (owner-scoped, size-capped, cleaned on document delete) and wire ToolContext.table_loader; needs a ticket (and likely an ADR note).
 - Agent loop (T-016) must count tool LLM calls (summarize_document, compare_documents) against the per-run USD/token budget and pass settings.min_rerank_score into ToolContext; keep module state used by _run_async free of loop-bound objects.
 - query_table: no wall-clock timeout and pandas work is synchronous; consider asyncio.to_thread plus a timeout.
+- AGENT_MAX_TOKENS env var (currently constant 30000 in services/agent/graph.py); human adds it to .env.example (T-016 review).

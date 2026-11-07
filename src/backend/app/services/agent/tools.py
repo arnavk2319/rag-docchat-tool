@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 from collections.abc import Callable, Coroutine, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -54,6 +54,13 @@ class ToolContext:
     reranker: Any
     min_rerank_score: float = 0.0
     table_loader: Callable[[str, str], bytes | None] | None = None  # (owner_id, doc_id) -> raw file
+    surfaced: dict[str, str] = field(default_factory=dict)  # doc_id -> span; set by tool code only
+    budget: llm.Budget | None = None  # per-run agent budget; LLM calls inside tools are charged to it
+
+
+def _note(ctx: ToolContext, doc_id: str, span: str = "") -> None:
+    """Record (out-of-band) that a tool surfaced this registry/parent-backed doc id."""
+    ctx.surfaced.setdefault(doc_id, span)
 
 
 def escape(text: str) -> str:
@@ -156,6 +163,7 @@ def _search(ctx: ToolContext, a: SearchArgs) -> str:
         h = best.get(p.parent_id)
         loc = f"page {p.page}" if p.page is not None else (f"sheet {p.sheet}" if p.sheet else "")
         snippet = (h.text if h else p.text)[:MAX_SNIPPET_CHARS]
+        _note(ctx, p.doc_id, loc)
         out.append(
             f'[doc_id={p.doc_id} file={names.get(p.doc_id, "")} {loc} '
             f'section={p.section} score={score:.3f}]\n{snippet}'
@@ -175,6 +183,8 @@ def _list(ctx: ToolContext, a: ListArgs) -> str:
         f"status={d.status}"
         for d in docs[:MAX_LIST_DOCS]
     ]
+    for d in docs[:MAX_LIST_DOCS]:
+        _note(ctx, d.doc_id)
     if len(docs) > MAX_LIST_DOCS:
         lines.append(f"[{len(docs) - MAX_LIST_DOCS} more not shown]")
     return wrap("\n".join(lines))
@@ -192,6 +202,7 @@ def _get_page(ctx: ToolContext, a: GetPageArgs) -> str:
         ps = [p for p in ps if want in (p.section or "").casefold() or want == (p.sheet or "").casefold()]
     if not ps:
         return wrap(NOT_FOUND, ok=False)
+    _note(ctx, a.doc_id, f"page {a.page}" if a.page is not None else (a.section or ""))
     return wrap("\n\n".join(p.text for p in ps))
 
 
@@ -209,9 +220,20 @@ def _summarize(ctx: ToolContext, a: SummarizeArgs) -> str:
     doc = _visible(ctx, a.doc_id)
     if doc is None or doc.status != "ready":
         return wrap(NOT_FOUND, ok=False)
+    b = ctx.budget
+    if b is not None and b.usd >= b.max_usd:
+        return wrap("budget exhausted", ok=False)
     ps = ctx.parents.list_doc_parents(ctx.owner_id, a.doc_id)
-    res = _run_async(summarize_documents([DocText(doc.filename, [p.text for p in ps])]))
+    res = _run_async(summarize_documents(
+        [DocText(doc.filename, [p.text for p in ps])],
+        max_usd=None if b is None else b.max_usd - b.usd,
+    ))
+    if b is not None:  # count the summary's inner LLM calls against the run budget
+        b.steps += res.llm_calls
+        b.tokens += res.tokens
+        b.usd += res.usd
     note = " (partial: cost cap reached)" if res.partial else ""
+    _note(ctx, a.doc_id)
     return wrap(f"[doc_id={a.doc_id}]{note}\n{res.summary}")
 
 
@@ -232,8 +254,16 @@ def _compare(ctx: ToolContext, a: CompareArgs) -> str:
         blocks.append(f'<excerpt doc_id="{d.doc_id}" file="{escape(d.filename)}">\n'
                       f"{escape(text) or '(no relevant text)'}\n</excerpt>")
     prompt = load_prompt("compare").render(focus=escape(a.focus), excerpts="\n".join(blocks))
-    res = _run_async(llm.complete(
-        [{"role": "user", "content": prompt}], model_role="fast", max_tokens=500))
+    try:
+        res = _run_async(llm.complete(
+            [{"role": "user", "content": prompt}], model_role="fast", max_tokens=500,
+            budget=ctx.budget))
+    except llm.BudgetExceeded as exc:
+        if exc.result is None:
+            raise
+        res = exc.result  # already paid for: use it; the loop stops on the exhausted budget
+    for d in docs:
+        _note(ctx, d.doc_id)
     cites = " ".join(f"[doc_id={d.doc_id}]" for d in docs)
     return wrap(f"{res.text.strip()}\nSources: {cites}")
 
