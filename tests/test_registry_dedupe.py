@@ -53,10 +53,10 @@ def test_check_constraint_and_user_version(tmp_path):
     SqliteRegistry(p)
     conn = sqlite3.connect(p)
     try:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute(
-                "INSERT INTO documents VALUES ('i','o','f','m',1,'s',1,'t','bogus')"
+                "INSERT INTO documents VALUES ('i','o','f','m',1,'s',1,'t','bogus',NULL)"
             )
     finally:
         conn.close()

@@ -102,6 +102,25 @@ class SqliteParents:
                     )
         return [found[i] for i in ids if i in found]
 
+    def list_doc_parents(self, owner_id: str, doc_id: str) -> list[Parent]:
+        """All parents of one document in document order, owner-scoped.
+
+        Order (explicit): page ascending (NULL = non-paged sheets/sections first), then sheet
+        name, then char_start, then parent_id as the final tie-break."""
+        if not owner_id:
+            raise ValueError("owner_id is required")
+        with self._conn() as c:
+            rows = c.execute(
+                f"SELECT {_COLS} FROM parents WHERE owner_id = ? AND doc_id = ? "
+                "ORDER BY (page IS NULL) DESC, page ASC, sheet ASC, char_start ASC, parent_id ASC",
+                (owner_id, doc_id),
+            ).fetchall()
+        return [
+            Parent(owner_id=r[0], doc_id=r[1], parent_id=r[2], page=r[3], sheet=r[4],
+                   section=r[5], char_start=r[6], char_end=r[7], text=r[8])
+            for r in rows
+        ]
+
     def count(self, owner_id: str, doc_id: str | None = None) -> int:
         sql, args = "SELECT COUNT(*) FROM parents WHERE owner_id = ?", [owner_id]
         if doc_id is not None:

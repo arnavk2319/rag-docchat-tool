@@ -191,6 +191,7 @@ class IngestionService:
             (self._store.delete_doc, (doc.owner_id, doc.doc_id)),
             (self._parents.delete_doc, (doc.owner_id, doc.doc_id)),
             (self._reg.update_status, (doc.owner_id, doc.doc_id, "failed")),
+            (self._reg.set_failure_reason, (doc.owner_id, doc.doc_id, reason)),
         ):
             try:
                 step(*args)

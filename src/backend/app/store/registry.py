@@ -31,13 +31,29 @@ CREATE TABLE IF NOT EXISTS documents (
     sha256 TEXT NOT NULL,
     pages_or_sheets INTEGER NOT NULL,
     created_at TEXT NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('pending','processing','ready','failed'))
+    status TEXT NOT NULL CHECK (status IN ('pending','processing','ready','failed')),
+    failure_reason TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS ux_documents_owner_sha ON documents(owner_id, sha256);
-PRAGMA user_version = 1;
 """
 
-_COLS = "doc_id, owner_id, filename, mime, size, sha256, pages_or_sheets, created_at, status"
+SCHEMA_VERSION = 2
+
+
+def _migrate(c: sqlite3.Connection) -> None:
+    """Idempotent: v1 -> v2 adds documents.failure_reason (nullable); safe to re-run/race."""
+    cols = {r[1] for r in c.execute("PRAGMA table_info(documents)")}
+    if "failure_reason" not in cols:
+        try:
+            c.execute("ALTER TABLE documents ADD COLUMN failure_reason TEXT")
+        except sqlite3.OperationalError as e:  # another process migrated first
+            if "duplicate column" not in str(e):
+                raise
+    if c.execute("PRAGMA user_version").fetchone()[0] < SCHEMA_VERSION:
+        c.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+
+_INSERT_COLS = "doc_id, owner_id, filename, mime, size, sha256, pages_or_sheets, created_at, status"
+_COLS = _INSERT_COLS + ", failure_reason"
 
 
 class Document(BaseModel):
@@ -50,6 +66,7 @@ class Document(BaseModel):
     pages_or_sheets: int = Field(ge=0)
     created_at: datetime
     status: Status = "pending"
+    failure_reason: str | None = None  # short code (parse_error, ...), never document text
 
 
 class Registry(Protocol):
@@ -79,6 +96,7 @@ class Registry(Protocol):
     def delete(self, owner_id: str, doc_id: str) -> bool: ...
     def update_status(self, owner_id: str, doc_id: str, status: Status) -> bool: ...
     def update_pages_or_sheets(self, owner_id: str, doc_id: str, n: int) -> bool: ...
+    def set_failure_reason(self, owner_id: str, doc_id: str, reason: str | None) -> bool: ...
 
 
 class SqliteRegistry:
@@ -89,6 +107,8 @@ class SqliteRegistry:
             db_path = get_settings().db_path
         self._path = Path(db_path)
         init_db(self._path, _SCHEMA)
+        with self._conn() as c:
+            _migrate(c)
 
     @property
     def db_path(self) -> Path:
@@ -109,6 +129,7 @@ class SqliteRegistry:
             pages_or_sheets=row[6],
             created_at=row[7],
             status=row[8],
+            failure_reason=row[9],
         )
 
     def create(
@@ -151,7 +172,7 @@ class SqliteRegistry:
         with self._conn() as c:
             # Unique (owner_id, sha256) makes dedupe atomic across threads/processes.
             cur = c.execute(
-                f"INSERT OR IGNORE INTO documents ({_COLS}) VALUES (?,?,?,?,?,?,?,?,?)",
+                f"INSERT OR IGNORE INTO documents ({_INSERT_COLS}) VALUES (?,?,?,?,?,?,?,?,?)",
                 (
                     doc.doc_id,
                     doc.owner_id,
@@ -208,8 +229,10 @@ class SqliteRegistry:
             raise ValueError(f"invalid status: {status!r}")
         with self._conn() as c:
             cur = c.execute(
-                "UPDATE documents SET status=? WHERE owner_id=? AND doc_id=?",
-                (status, owner_id, doc_id),
+                "UPDATE documents SET status=?, "
+                "failure_reason=CASE WHEN ?='failed' THEN failure_reason ELSE NULL END "
+                "WHERE owner_id=? AND doc_id=?",
+                (status, status, owner_id, doc_id),
             )
             return cur.rowcount > 0
 
@@ -220,5 +243,13 @@ class SqliteRegistry:
             cur = c.execute(
                 "UPDATE documents SET pages_or_sheets=? WHERE owner_id=? AND doc_id=?",
                 (n, owner_id, doc_id),
+            )
+            return cur.rowcount > 0
+
+    def set_failure_reason(self, owner_id: str, doc_id: str, reason: str | None) -> bool:
+        with self._conn() as c:
+            cur = c.execute(
+                "UPDATE documents SET failure_reason=? WHERE owner_id=? AND doc_id=?",
+                (reason, owner_id, doc_id),
             )
             return cur.rowcount > 0

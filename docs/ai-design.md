@@ -13,4 +13,7 @@
 | Price table | `config.prices` USD/1M tokens in/out: sonnet-5-5 3.00/15.00, haiku-5-5 1.00/5.00; unknown ids cost 0 | Per-call USD logging and budget enforcement; update when prices change | Logging only; no extra cost |
 
 ## Prompts
+Versioned files in `prompts/*.md` (header: id, version, model_tier, updated), loaded by `core/prompts.py`; never inline strings.
+- `query` v1 (agent tier): single-shot answer from retrieved excerpts. Excerpts go inside `<excerpt id source>` tags, the question inside `<question>`; both are escaped (`<`, `>` -> entities) so retrieved text cannot close a tag. The prompt states the tagged text is DATA, tells the model to say "I don't know." when the excerpts lack the answer and to cite excerpt ids.
+- `summarize` v1 (fast tier): single-shot summary of concatenated stored chunk texts (cap 24000 chars across docs) inside `<documents>` tags, same escaping and DATA rule; map-reduce replaces it in T-012.
 ## Failure modes and fallbacks

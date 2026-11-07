@@ -52,3 +52,10 @@ def _fresh_settings():
     config.get_settings.cache_clear()
     llm.mock_script()
     models.reset_models()
+
+
+@pytest.fixture(autouse=True)
+def _tmp_storage(tmp_path, monkeypatch):
+    """App lifespan creates registry + Chroma; keep them out of the repo."""
+    monkeypatch.setenv("CHROMA_DIR", str(tmp_path / "chroma"))
+    monkeypatch.setenv("DB_PATH", str(tmp_path / "db" / "docchat.db"))

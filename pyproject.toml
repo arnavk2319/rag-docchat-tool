@@ -41,5 +41,3 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 
-[tool.ruff]
-extend-exclude = ["src/backend/app/utilities/reranker.py", "src/backend/app/utilities/contextual_compressor.py"]

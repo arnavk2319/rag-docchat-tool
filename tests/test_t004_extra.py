@@ -15,7 +15,6 @@ import pytest
 from app.core import models
 from app.core.concurrency import run_blocking
 from app.core.config import Settings, get_settings
-from app.routers import response as r
 from app.utilities import file_handler as fh
 from fastapi.testclient import TestClient
 
@@ -412,7 +411,7 @@ def test_file_handler_import_no_side_effects(tmp_path):
     assert res.returncode == 0, res.stderr[-800:]
 
 
-# ---------- upload e2e ----------
+# ---------- upload e2e (real app, fake models, tmp registry + Chroma) ----------
 
 
 @pytest.fixture
@@ -426,10 +425,9 @@ def app_client(tmp_path, monkeypatch):
 
 
 def _up(c, name, data):
-    return c.post("/validate-upload", files={"file": (name, data)})
-
-
-KEYS = {"text", "source", "page", "sheet"}
+    r = c.post("/v1/documents", files={"files": (name, data)}, headers={"X-User-Id": "u1"})
+    assert r.status_code == 200, r.text
+    return r.json()["results"][0]
 
 
 def _docx_bytes():
@@ -454,51 +452,6 @@ def _xlsx_bytes():
     return b.getvalue()
 
 
-def test_upload_each_type_shape(app_client, tmp_path):
-    c, tmpd = app_client
-    pdf = tmp_path / "x.pdf"
-    _pdf(pdf, 2)
-    cases = [
-        ("a.txt", b"hello txt", "hello txt"),
-        ("a.csv", b"a,b\n1,2\n", "1, 2"),
-        ("a.docx", _docx_bytes(), "hello docx"),
-        ("a.xlsx", _xlsx_bytes(), "1, 2"),
-        ("a.pdf", pdf.read_bytes(), "page1"),
-    ]
-    for name, data, needle in cases:
-        resp = _up(c, name, data)
-        assert resp.status_code == 200, (name, resp.text)
-        body = resp.json()
-        assert body["filename"] == name
-        assert isinstance(body["content"], list) and body["content"]
-        assert all(set(x) == KEYS for x in body["content"])
-        assert needle in body["content"][0]["text"]
-    assert list(tmpd.iterdir()) == []
-
-
-def test_upload_xlsx_sheets_and_pdf_pages(app_client, tmp_path):
-    c, _ = app_client
-    x = _up(c, "a.xlsx", _xlsx_bytes()).json()["content"]
-    assert [i["sheet"] for i in x] == ["S1", "S2"] and all(i["page"] is None for i in x)
-    pdf = tmp_path / "y.pdf"
-    _pdf(pdf, 2)
-    p = _up(c, "a.pdf", pdf.read_bytes()).json()["content"]
-    assert [i["page"] for i in p] == [1, 2] and all(i["sheet"] is None for i in p)
-
-
-def test_upload_corrupt_files_422_no_leak_and_cleanup(app_client):
-    c, tmpd = app_client
-    for name, data in [
-        ("a.pdf", b"%PDF-1.4 SECRETTEXT junk"),
-        ("a.docx", zip_with("word/document.xml")),
-        ("a.xlsx", zip_with("xl/workbook.xml")),
-    ]:
-        resp = _up(c, name, data)
-        assert resp.status_code == 422, (name, resp.text)
-        assert "SECRETTEXT" not in resp.text and "Traceback" not in resp.text
-    assert list(tmpd.iterdir()) == []
-
-
 def zip_with(member: str) -> bytes:
     b = io.BytesIO()
     with zipfile.ZipFile(b, "w") as z:
@@ -506,60 +459,59 @@ def zip_with(member: str) -> bytes:
     return b.getvalue()
 
 
-def test_upload_xls_is_422(app_client):
+def test_upload_each_type_ready(app_client, tmp_path):
     c, tmpd = app_client
-    resp = _up(c, "a.xls", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\0" * 600)
-    assert resp.status_code == 422
+    pdf = tmp_path / "x.pdf"
+    _pdf(pdf, 2)
+    for name, data in [
+        ("a.txt", b"hello txt"),
+        ("a.csv", b"a,b\n1,2\n"),
+        ("a.docx", _docx_bytes()),
+        ("a.xlsx", _xlsx_bytes()),
+        ("a.pdf", pdf.read_bytes()),
+    ]:
+        r = _up(c, name, data)
+        assert r["ok"] and r["status"] == "ready" and r["filename"] == name, (name, r)
     assert list(tmpd.iterdir()) == []
 
 
-def test_upload_decompression_bomb_422(app_client, monkeypatch):
+def test_upload_corrupt_files_fail_no_leak_and_cleanup(app_client):
+    c, tmpd = app_client
+    for name, data in [
+        ("a.pdf", b"%PDF-1.4 SECRETTEXT junk"),
+        ("a.docx", zip_with("word/document.xml")),
+        ("a.xlsx", zip_with("xl/workbook.xml")),
+        ("a.xls", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\0" * 600),
+    ]:
+        r = _up(c, name, data)
+        assert r["ok"] is False and r["error"]["code"] == "parse_error", (name, r)
+        assert r["failure_reason"] == "parse_error"
+        assert "SECRETTEXT" not in str(r) and "Traceback" not in str(r)
+    assert list(tmpd.iterdir()) == []
+
+
+def test_upload_decompression_bomb_fails(app_client, monkeypatch):
     c, tmpd = app_client
     monkeypatch.setattr(fh, "MAX_DECOMPRESSED_BYTES", 100_000)
     b = io.BytesIO()
     with zipfile.ZipFile(b, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("word/document.xml", b"\0" * 2_000_000)
-    resp = _up(c, "a.docx", b.getvalue())
-    assert resp.status_code == 422 and list(tmpd.iterdir()) == []
-
-
-def test_upload_real_import_error_is_500_without_leak(app_client, monkeypatch):
-    c, tmpd = app_client
-
-    def boom(path, mime):
-        raise ImportError("SECRET-internal-module missing")
-
-    monkeypatch.setattr(fh, "load_txt", boom)
-    monkeypatch.setitem(fh._LOADERS, fh.TXT, boom)
-    resp = _up(c, "a.txt", b"hi")
-    assert resp.status_code == 500
-    assert "SECRET" not in resp.text and "missing" not in resp.text
+    r = _up(c, "a.docx", b.getvalue())
+    assert r["ok"] is False and r["error"]["code"] == "parse_error"
     assert list(tmpd.iterdir()) == []
 
 
-def test_upload_parsing_goes_through_run_blocking(app_client, monkeypatch):
-    c, _ = app_client
-    calls = []
-    real = r.run_blocking
+def test_upload_real_import_error_is_ingest_failed_without_leak(app_client, monkeypatch):
+    c, tmpd = app_client
 
-    async def spy(fn, *a):
-        calls.append((fn, a))
-        return await real(fn, *a)
+    def boom(path):
+        raise ImportError("SECRET-internal-module missing")
 
-    monkeypatch.setattr(r, "run_blocking", spy)
-    assert _up(c, "a.txt", b"hi").status_code == 200
-    assert len(calls) == 1 and calls[0][0] is r.parse_document and calls[0][1][1] == "text/plain"
-
-
-def test_upload_parse_runs_off_event_loop_thread(app_client, monkeypatch):
-    c, _ = app_client
-    seen = []
-    monkeypatch.setattr(
-        r, "parse_document", lambda p, m: seen.append(threading.get_ident()) or []
-    )
-    main = threading.get_ident()
-    assert _up(c, "a.txt", b"hi").status_code == 200
-    assert seen and seen[0] != main
+    monkeypatch.setitem(fh._LOADERS, fh.TXT, boom)
+    r = _up(c, "a.txt", b"hi")
+    assert r["ok"] is False and r["error"]["code"] == "ingest_failed"
+    assert "SECRET" not in str(r) and "missing" not in str(r)
+    assert list(tmpd.iterdir()) == []
 
 
 # ---------- legacy removal ----------
@@ -581,8 +533,10 @@ def test_legacy_modules_gone_and_unreferenced():
     assert hits == []
 
 
-def test_no_501_shim_left():
-    assert "501" not in (SRC / "app" / "routers" / "response.py").read_text()
+def test_legacy_router_and_langchain_gone():
+    assert not (SRC / "app" / "routers").exists()
+    for f in SRC.rglob("*.py"):
+        assert "langchain" not in f.read_text() and "HttpClient" not in f.read_text(), f
 
 
 # ---------- config ----------

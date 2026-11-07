@@ -125,12 +125,17 @@ def test_decompression_limit_uses_actual_size(tmp_path, monkeypatch):
         fh.load_xlsx(str(q))
 
 
-def test_upload_parse_error_is_422(monkeypatch):
+def test_upload_parse_error_is_reported_per_file(monkeypatch):
     import app.main as m
 
     with TestClient(m.app) as c:
-        r = c.post("/validate-upload", files={"file": ("a.pdf", b"%PDF-1.4 junk", "application/pdf")})
-        assert r.status_code == 422
+        r = c.post(
+            "/v1/documents",
+            files={"files": ("a.pdf", b"%PDF-1.4 junk", "application/pdf")},
+            headers={"X-User-Id": "u1"},
+        )
+        res = r.json()["results"][0]
+        assert r.status_code == 200 and res["ok"] is False and res["error"]["code"] == "parse_error"
 
 
 def test_models_fake_outside_pytest_raises(monkeypatch):

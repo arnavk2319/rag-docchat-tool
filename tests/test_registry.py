@@ -105,3 +105,32 @@ def test_default_path_from_config(tmp_path, monkeypatch):
     r = SqliteRegistry()
     assert (tmp_path / "cfg" / "c.db").exists()
     assert r.list_by_owner(A) == []
+
+
+def test_migrates_v1_database_to_v2_idempotently(tmp_path):
+    import sqlite3
+
+    from app.store.registry import SqliteRegistry
+
+    p = tmp_path / "v1.db"
+    conn = sqlite3.connect(p)
+    conn.executescript(
+        "CREATE TABLE documents (doc_id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, filename TEXT NOT NULL,"
+        " mime TEXT NOT NULL, size INTEGER NOT NULL, sha256 TEXT NOT NULL, pages_or_sheets INTEGER NOT NULL,"
+        " created_at TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('pending','processing','ready','failed')));"
+        "CREATE UNIQUE INDEX ux_documents_owner_sha ON documents(owner_id, sha256);"
+        "INSERT INTO documents VALUES ('d1','o','f.txt','text/plain',1,'s',1,'2026-01-01T00:00:00+00:00','failed');"
+        "PRAGMA user_version = 1;"
+    )
+    conn.close()
+    for _ in range(2):  # re-opening must be a no-op
+        reg = SqliteRegistry(p)
+        doc = reg.get("o", "d1")
+        assert doc is not None and doc.failure_reason is None and doc.status == "failed"
+        c = sqlite3.connect(p)
+        assert c.execute("PRAGMA user_version").fetchone()[0] == 2
+        c.close()
+    assert reg.set_failure_reason("o", "d1", "parse_error")
+    assert reg.get("o", "d1").failure_reason == "parse_error"
+    reg.update_status("o", "d1", "processing")  # a retry clears the stale reason
+    assert reg.get("o", "d1").failure_reason is None
