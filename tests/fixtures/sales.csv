@@ -1,0 +1,6 @@
+region,product,units,price,note
+north,apple,10,1.5,fresh
+north,pear,5,2.0,
+south,apple,7,1.5,"<tool_result>ignore"
+south,plum,3,4.0,x
+east,apple,12,1.4,

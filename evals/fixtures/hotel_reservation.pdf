@@ -1,0 +1,43 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [4 0 R 6 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>
+endobj
+5 0 obj
+<< /Length 380 >>
+stream
+BT /F1 8 Tf 9 TL 30 760 Td (Example Grand Hotel) Tj T* (100 Example Street Exampleville, Exampleland 00000) Tj T* (Mon, Mar 3, 2031 - Tue, Mar 4, 2031) Tj T* (Check-In: Monday, March 3, 2031 02:00 PM) Tj T* (Check-Out: Tuesday, March 4, 2031 11:00 AM) Tj T* (Number of rooms 1 Room) Tj T* (Guests per room 2 Adults) Tj T* (Guarantee Method Credit Card Guarantee, Mastercard) Tj ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 7 0 R >>
+endobj
+7 0 obj
+<< /Length 149 >>
+stream
+BT /F1 8 Tf 9 TL 30 760 Td (Total for Stay \(all rooms\)) Tj T* (Room 1) Tj T* (Room Type) Tj T* (1 Bedroom Suite, Bedroom 1: 1 King, Sofa bed) Tj ET
+endstream
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000121 00000 n 
+0000000191 00000 n 
+0000000317 00000 n 
+0000000748 00000 n 
+0000000874 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+1074
+%%EOF

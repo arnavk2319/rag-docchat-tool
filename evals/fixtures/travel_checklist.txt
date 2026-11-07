@@ -1,0 +1,28 @@
+Things for travel
+* Mobile Internet while travelling 
+* Phone data plan restrictions 
+* Ability to use cards
+* Travel adapter
+* Examplo shampoo, razor, after shave
+* Power bank
+* Light noise cancelling headphones
+* Type c to aux
+* Passport renewal check, travel insurance, currency exchange, return ticket
+Before travel
+* Document binder
+Things to do before travel
+* Charge laptop, power bank, earphones, phone
+* Pack shirts, shorts, jeans, pajamas, socks, 1 hoodie
+* Pack shampoo, conditioner, shaving kit
+* Pack 2 pair shoes
+* Pack 2 phone chargers, laptop charger, power bank, earphones, headphones
+* Pack a notebook and pen
+* Pack a rain jacket and umbrella
+* Keep a copy of passport, travel insurance and return ticket
+* Organize document binder
+* Pack blue bag with tablet, document binder
+* Buy travel pillow, skin repair cream
+* Buy bag locks
+* Buy headphones
+* Remove old receipts from wallet
+* Complete 2 Jira tickets and deploy

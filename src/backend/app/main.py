@@ -1,15 +1,110 @@
-import logging
-from fastapi import FastAPI, APIRouter, HTTPException, Request
-from fastapi.exception_handlers import http_exception_handler
+import tracemalloc
+from contextlib import asynccontextmanager
 
-from .routers.response import router
+from fastapi import FastAPI
+from starlette.exceptions import HTTPException
 
-app = FastAPI()
-logger = logging.getLogger(__name__)
+from .api import documents, query, sessions, summarize
+from .api.deps import ApiError
+from .api.errors import http_error, install_error_handlers
+from .core.concurrency import run_blocking
+from .core.config import get_settings
+from .core.limits import RateLimiter, SpendLedger
+from .core.llm import validate_provider
+from .core.models import load_models, models_fake, models_loaded, reset_models
+from .services.ingestion import IngestionService
+from .store.bm25 import Bm25Store
+from .store.chroma import ChromaStore
+from .store.parents import SqliteParents
+from .store.registry import SqliteRegistry
+from .store.sessions import SqliteSessions
+from .store.spend import SqliteSpend
+from .utilities.logging_module import logger
 
-@app.exception_handler(HTTPException)
-async def http_exception_handle_logging(request, exc):
-    logger.error(f"HTTPException: ${exc.status_code} ${exc.detail}")
-    return await http_exception_handler(request, exc)
+tracemalloc.start()
 
-app.include_router(router)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    validate_provider()
+    logger.info("Starting the RAG doc chat tool")
+    settings = get_settings()
+    await run_blocking(load_models, settings)
+    # App-wide services; tests may pre-set any of these on app.state (or override the deps).
+    state = app.state
+    created = []
+    if getattr(state, "registry", None) is None:
+        state.registry = await run_blocking(SqliteRegistry, settings.db_path)
+        created.append("registry")
+    if getattr(state, "store", None) is None:
+        state.store = await run_blocking(ChromaStore, settings.chroma_dir)
+        created.append("store")
+    if getattr(state, "parents", None) is None:
+        state.parents = await run_blocking(SqliteParents, settings.db_path)
+        created.append("parents")
+    if getattr(state, "bm25", None) is None:
+        # Rebuilt from the persisted JSON token files at startup.
+        state.bm25 = await run_blocking(Bm25Store, f"{settings.chroma_dir}_bm25")
+        created.append("bm25")
+    if getattr(state, "sessions", None) is None:
+        state.sessions = await run_blocking(
+            lambda: SqliteSessions(
+                settings.db_path, max_messages=settings.session_max_messages,
+                max_tokens=settings.session_max_tokens, ttl_hours=settings.session_ttl_hours,
+            )  # also purges expired sessions at startup
+        )
+        created.append("sessions")
+    if getattr(state, "limiter", None) is None:
+        state.limiter = RateLimiter(settings.rate_limit_per_min)
+        created.append("limiter")
+    if getattr(state, "global_limiter", None) is None:
+        state.global_limiter = RateLimiter(settings.global_rate_limit_per_min, max_users=1)
+        created.append("global_limiter")
+    if getattr(state, "ledger", None) is None:
+        state.ledger = await run_blocking(
+            lambda: SpendLedger(
+                SqliteSpend(settings.db_path), settings.daily_usd_cap,
+                global_cap_usd=settings.global_daily_usd_cap,
+            )
+        )
+        created.append("ledger")
+    if getattr(state, "ingestion", None) is None:
+        state.ingestion = IngestionService(
+            state.registry, state.store, parents=state.parents, bm25=state.bm25
+        )
+        created.append("ingestion")
+    try:
+        yield
+    finally:
+        for name in created:
+            setattr(state, name, None)
+        reset_models()
+    logger.info("App now shutting down")
+
+
+app = FastAPI(lifespan=lifespan)
+app.include_router(documents.router)
+app.include_router(summarize.router)
+app.include_router(query.router)
+app.include_router(sessions.router)
+
+
+async def http_exception_handle_logging(request, exc: HTTPException):
+    # Detail only for our own ApiError (fixed strings); framework/other details may echo input.
+    detail = exc.detail if isinstance(exc, ApiError) else "-"
+    logger.error("HTTPException: %s %s", exc.status_code, detail)
+    return http_error(exc)
+
+
+install_error_handlers(app, http_exception_handle_logging)
+
+
+@app.get("/healthz", tags=["health"])
+def healthz():
+    return {"models_loaded": models_loaded(), "fake": models_fake()}
+
+
+@app.get("/ping-checkpoint", tags=["health"])
+def ping_checkpoint():
+    logger.info("Checking endpoint status")
+    return "Returning OK 200"
