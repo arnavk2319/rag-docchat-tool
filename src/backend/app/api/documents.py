@@ -14,6 +14,7 @@ router = APIRouter(prefix="/v1/documents", tags=["documents"])
 
 MAX_FILES = 10
 MAX_REQUEST_BYTES = 50 * 1024 * 1024
+_VALIDATION_CODES = {"too_large", "bad_extension", "content_mismatch", "bad_content_type"}
 _ERRORS = {401: {"model": ErrorBody}, 404: {"model": ErrorBody}}
 
 
@@ -28,6 +29,7 @@ def to_out(d: Document) -> DocumentOut:
 )
 async def upload_documents(
     request: Request,
+    response: Response,
     user: CurrentUser,
     ingestion: IngestionDep,
     registry: RegistryDep,
@@ -52,6 +54,11 @@ async def upload_documents(
             raise ApiError(413, "too_large", "Request is too large") from None
         total += n
         results.append(res)
+    # When every file failed upload validation, surface it in the status line too
+    # (413 oversize, else 415); the body keeps the per-file shape. Mixed batches stay 200.
+    codes = [r.error.code if r.error else None for r in results]
+    if codes and all(c in _VALIDATION_CODES for c in codes):
+        response.status_code = 413 if "too_large" in codes else 415
     return UploadResponse(results=results)
 
 

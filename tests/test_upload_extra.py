@@ -77,7 +77,7 @@ def test_temp_removed_if_already_deleted(tmpdir_used):
 ])
 def test_rejections_create_no_temp_and_skip_ingest(client, tmpdir_used, stub, name, data, code):
     resp = post(client, name, data)
-    assert resp.status_code == 200
+    assert resp.status_code == (200 if code == "empty_file" else 415)
     r = first(resp)
     assert r["ok"] is False and r["error"]["code"] == code
     assert stub.calls == []
@@ -99,12 +99,13 @@ def test_txt_csv_reach_ingest_with_mime(client, stub):
     assert [c[1] for c in stub.calls] == ["text/plain", "text/csv", "text/csv"]
 
 
-def test_xlsx_and_docx_and_pdf_and_xls_accepted(client, stub):
+def test_xlsx_and_docx_and_pdf_accepted_xls_rejected(client, stub):
     assert first(post(client, "a.xlsx", zip_bytes("xl/workbook.xml")))["ok"]
     assert first(post(client, "a.docx", zip_bytes("word/document.xml")))["ok"]
     assert first(post(client, "a.pdf", b"%PDF-1.7\n..."))["ok"]
-    assert first(post(client, "a.xls", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"0" * 20))["ok"]
-    assert len(stub.calls) == 4
+    assert len(stub.calls) == 3
+    r = post(client, "a.xls", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"0" * 20)
+    assert r.status_code == 415 and first(r)["error"]["code"] == "bad_extension"
 
 
 def test_oversize_rejected_over_http(client, stub, tmpdir_used):

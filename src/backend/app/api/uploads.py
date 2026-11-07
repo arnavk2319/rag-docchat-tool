@@ -12,7 +12,9 @@ import tempfile
 
 from fastapi import UploadFile
 
+from ..core import security
 from ..core.concurrency import run_blocking
+from ..core.config import get_settings
 from ..core.security import (
     UploadRejected,
     extension_of,
@@ -67,7 +69,7 @@ async def process_upload(
         if not name:
             raise UploadRejected("bad_extension", "Filename is required")
         ext = extension_of(name)
-        contents = await read_limited(file)
+        contents = await read_limited(file, min(get_settings().max_upload_mb * 1024 * 1024, security.MAX_FILE_SIZE))
         size = len(contents)
         if budget_left is not None and size > budget_left:
             raise RequestTooLarge("request_too_large", "Request is too large")

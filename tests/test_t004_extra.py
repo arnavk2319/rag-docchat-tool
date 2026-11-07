@@ -481,7 +481,6 @@ def test_upload_corrupt_files_fail_no_leak_and_cleanup(app_client):
         ("a.pdf", b"%PDF-1.4 SECRETTEXT junk"),
         ("a.docx", zip_with("word/document.xml")),
         ("a.xlsx", zip_with("xl/workbook.xml")),
-        ("a.xls", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"\0" * 600),
     ]:
         r = _up(c, name, data)
         assert r["ok"] is False and r["error"]["code"] == "parse_error", (name, r)

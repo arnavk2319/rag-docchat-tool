@@ -31,3 +31,7 @@ Every error body is `{detail, code}`; validation errors (422 `validation_error`)
 
 ## Services
 Created in the app lifespan on `app.state` (registry and parents from `DB_PATH`, Chroma from `CHROMA_DIR`, `IngestionService`); a test may pre-set any of them or override `get_registry`/`get_store`/`get_ingestion`.
+
+## Upload validation (T-008)
+Per file, in order: sanitized basename (both separators, control chars dropped, max 255; client name never used for the temp path) -> extension allowlist (pdf, docx, txt, csv, xlsx; legacy xls is rejected 415) -> streamed read capped at `MAX_UPLOAD_MB` (default 10; it can only lower the cap below the fixed 10 MB ceiling, never raise it; read stops at the first chunk over the cap) -> content sniff must agree with the extension (zip member/size limits) -> temp file (random name) removed in `finally`, including parser failure.
+HTTP status: body is always the per-file `{results}` shape. If every file failed validation the status is 413 (any `too_large`) or 415 (`bad_extension`, `content_mismatch`, `bad_content_type`); mixed batches and `empty_file` stay 200 with per-file errors. Request-level: 413 over 50 MB total.

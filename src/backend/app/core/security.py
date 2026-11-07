@@ -21,7 +21,6 @@ EXT_TO_MIMES: dict[str, set[str]] = {
     ".docx": {DOCX},
     ".txt": {"text/plain"},
     ".csv": {"text/csv", "text/plain"},
-    ".xls": {"application/vnd.ms-excel"},
     ".xlsx": {XLSX},
 }
 ALLOWED_EXTENSIONS = sorted(EXT_TO_MIMES)
@@ -69,8 +68,6 @@ def sniff_mime(data: bytes, ext: str) -> str | None:
         return "application/pdf"
     if head.startswith(b"PK\x03\x04"):
         return _sniff_zip(data)
-    if head.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"):
-        return "application/vnd.ms-excel" if ext == ".xls" else None
     if b"\x00" not in head:
         try:
             head.decode("utf-8")

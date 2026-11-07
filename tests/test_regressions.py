@@ -26,7 +26,7 @@ def code(resp):
 def test_rejected_upload_does_not_raise_unbound_local(client):
     # bug: finally os.remove(tmp_path) -> UnboundLocalError when no temp file made
     resp = post(client, "a.exe", b"MZ")
-    assert resp.status_code == 200 and code(resp) == "bad_extension"
+    assert resp.status_code == 415 and code(resp) == "bad_extension"
 
 
 def test_oversize_rejected_while_streaming(client, monkeypatch):
