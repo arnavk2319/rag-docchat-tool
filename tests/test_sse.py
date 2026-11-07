@@ -165,7 +165,14 @@ async def test_disconnect_cancels_run_and_stops_llm_calls(monkeypatch):
     assert started.is_set() and calls["n"] == 1 and out == []
     await asyncio.sleep(0.05)
     assert calls["n"] == 1  # no further LLM calls after cancel
-    assert not [t for t in asyncio.all_tasks() if "runner" in repr(t) and not t.done()]
+    # match the coroutine's own name, not repr(t): on CI the checkout path contains
+    # "/runner/" and would match the test's own task.
+    leaked = [
+        t
+        for t in asyncio.all_tasks()
+        if t.get_coro().__qualname__.endswith("stream_agent.<locals>.runner") and not t.done()
+    ]
+    assert not leaked
 
 
 async def test_heartbeat_ping(monkeypatch):
