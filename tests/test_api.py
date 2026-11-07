@@ -173,7 +173,7 @@ def test_summarize_uses_fast_role_and_data_tags(client, monkeypatch):
     monkeypatch.setattr(llm, "complete", spy)
     assert client.post("/v1/summarize", json={"doc_id": d}, headers=A).status_code == 200
     assert seen["model_role"] == "fast"
-    assert seen["content"].count("</documents>") == 1  # injected closing tag is escaped
+    assert seen["content"].count("</section>") == 1  # injected closing tag is escaped
     assert "&lt;/documents&gt;" in seen["content"]
 
 
@@ -285,20 +285,26 @@ def test_query_prompt_uses_deduplicated_parent_text_and_child_citations(client, 
     assert all(c["span"]["char_end"] > c["span"]["char_start"] for c in cites)
 
 
-def test_summarize_uses_parents_in_document_order_and_cap(client, monkeypatch):
+def test_summarize_map_reduce_covers_whole_document_in_order(client, monkeypatch):
     text = " ".join(f"word{i}" for i in range(2000)).encode()
     d = one(client, "long.txt", text)
-    seen = {}
+    seen = []
     real = llm.complete
 
     async def spy(messages, **kw):
-        seen["content"] = messages[0]["content"]
+        seen.append(messages[0]["content"])
         return await real(messages, **kw)
 
     monkeypatch.setattr(llm, "complete", spy)
-    assert client.post("/v1/summarize", json={"doc_id": d}, headers=A).status_code == 200
-    c = seen["content"]
-    assert c.index("word0 ") < c.index("word1999")
-    monkeypatch.setattr("app.api.summarize.SUMMARY_MAX_CHARS", 500)
-    client.post("/v1/summarize", json={"doc_id": d}, headers=A)
-    assert "word1999" not in seen["content"] and len(seen["content"]) < 2500
+    r = client.post("/v1/summarize", json={"doc_id": d}, headers=A)
+    assert r.status_code == 200 and r.json()["partial"] is False
+    maps = seen[:-1]
+    assert len(maps) >= 2 and "word0 " in maps[0] and "word1999" in maps[-1]
+    assert "word1999" not in maps[0]  # whole document is covered, not truncated
+
+def test_summarize_partial_flag_on_cost_cap(client, monkeypatch):
+    from app.core import config
+    d = one(client, "big.txt", (" ".join(f"w{i}" for i in range(6000))).encode())
+    config.get_settings().prices["claude-haiku-5-5"] = (4.0, 4.0)
+    r = client.post("/v1/summarize", json={"doc_id": d}, headers=A)
+    assert r.status_code == 200 and r.json()["partial"] is True and r.json()["summary"]

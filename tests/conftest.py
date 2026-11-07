@@ -44,10 +44,13 @@ def _block_network(monkeypatch: pytest.MonkeyPatch):
 @pytest.fixture(autouse=True)
 def _fresh_settings():
     from app.core import config, llm, models
+    from app.services import compression, summarization
 
     config.get_settings.cache_clear()
     llm.mock_script()
     models.reset_models()
+    summarization.clear_cache()
+    compression.clear_cache()
     yield
     config.get_settings.cache_clear()
     llm.mock_script()

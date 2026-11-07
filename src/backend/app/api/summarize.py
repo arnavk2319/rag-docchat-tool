@@ -1,11 +1,11 @@
-"""POST /v1/summarize: single-shot summary via the `fast` role (map-reduce comes in T-012)."""
+"""POST /v1/summarize: map-reduce summary (services/summarization.py)."""
 
 from fastapi import APIRouter, Depends
 
-from ..core import llm
-from ..core.prompts import load_prompt
+from ..core.concurrency import run_blocking
+from ..services.summarization import DocText, summarize_documents
 from .deps import CurrentUser, ParentsDep, RegistryDep, json_body_limit
-from .rag import SUMMARY_MAX_CHARS, doc_text, escape, resolve_ready_docs
+from .rag import resolve_ready_docs
 from .schemas import ErrorBody, SummarizeRequest, SummarizeResponse
 
 router = APIRouter(prefix="/v1", tags=["query"])
@@ -27,15 +27,9 @@ async def summarize(
 ) -> SummarizeResponse:
     ids = body.ids()
     docs = await resolve_ready_docs(registry, user, ids)
-    per_doc = SUMMARY_MAX_CHARS // len(docs)
-    blocks = []
+    texts = []
     for d in docs:
-        text = await doc_text(parents, user, d.doc_id, per_doc)
-        blocks.append(f'<document name="{escape(d.filename)}">\n{escape(text)}\n</document>')
-    prompt = load_prompt("summarize")
-    res = await llm.complete(
-        [{"role": "user", "content": prompt.render(documents="\n".join(blocks))}],
-        model_role="fast",
-        max_tokens=512,
-    )
-    return SummarizeResponse(summary=res.text.strip(), doc_ids=ids)
+        plist = await run_blocking(parents.list_doc_parents, user, d.doc_id)
+        texts.append(DocText(d.filename, [p.text for p in plist]))
+    res = await summarize_documents(texts)  # LLMError -> 502 via app exception handlers
+    return SummarizeResponse(summary=res.summary, doc_ids=ids, partial=res.partial)

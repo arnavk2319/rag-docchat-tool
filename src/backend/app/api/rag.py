@@ -12,7 +12,6 @@ from ..store.registry import Document, Registry
 from .deps import ApiError
 from .schemas import Citation, Span
 
-SUMMARY_MAX_CHARS = 24_000  # single-shot cap; map-reduce arrives in T-012
 _TAG = re.compile(r"[<>]")
 
 

@@ -103,3 +103,4 @@ class SummarizeRequest(BaseModel):
 class SummarizeResponse(BaseModel):
     summary: str
     doc_ids: list[str]
+    partial: bool = False  # true when the USD cap or batch cap cut the summary short

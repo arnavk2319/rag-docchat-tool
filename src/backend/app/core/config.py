@@ -1,6 +1,7 @@
 """Typed settings read from the process environment (no .env parsing here)."""
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -34,6 +35,11 @@ class Settings(BaseSettings):
     daily_usd_cap: float = Field(default=1.0, ge=0)
     agent_max_steps: int = Field(default=8, gt=0)
     agent_max_usd: float = Field(default=0.05, ge=0)
+    summary_max_usd: float = Field(default=0.02, ge=0)  # env SUMMARY_MAX_USD
+    summary_reduce_role: Literal["agent", "fast"] = "fast"  # env SUMMARY_REDUCE_ROLE
+    summary_compress: bool = False  # env SUMMARY_COMPRESS; optional compression before map
+    summary_batch_chars: int = Field(default=8000, gt=0)  # env SUMMARY_BATCH_CHARS
+    summary_max_batches: int = Field(default=40, gt=0)  # env SUMMARY_MAX_BATCHES
 
     # Non-env: price table (USD per 1M tokens) and transport defaults.
     prices: dict[str, tuple[float, float]] = Field(

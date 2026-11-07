@@ -292,10 +292,10 @@ def test_summarize_exactly_one_and_order(client, monkeypatch):
     seen = spy_llm(monkeypatch)
     r = client.post("/v1/summarize", json={"doc_ids": [d2, d1]}, headers=A)
     assert r.status_code == 200 and r.json()["doc_ids"] == [d2, d1] and r.json()["summary"]
-    c = seen["content"]
-    assert c.index("second doc text") < c.index("first doc text")
+    c = seen["content"]  # last call = reduce; partials keep the requested document order
+    assert c.index('document="b.txt"') < c.index('document="a.txt"')
     assert seen["model_role"] == "fast"
-    assert "<document" in c and "DATA" in c.upper()
+    assert "<partial" in c and "DATA" in c.upper()
 
 
 # ---- query ----
