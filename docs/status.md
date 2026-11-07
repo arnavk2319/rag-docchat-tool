@@ -9,6 +9,11 @@ Updated: 2026-11-07 · Mode: autopilot · Phase: ALL 23 TICKETS DONE on dev · s
 - Use `node --experimental-strip-types scripts/agentic/*.ts` (plain `node` fails on Node 22).
 - MAX_REWRITES default is 1 (was 2): out-of-corpus questions burned ~11 steps for no gain.
 
+## Phase P5 (PLAN GATE, waiting on human)
+- P5 Service platform drafted: T-024..T-033 (all `approved` by human (Gate A)), spec section "P5 Service platform (pre-frontend)". Human decisions: one standalone container service; Postgres+pgvector behind VectorStore (ADR-0003 in T-024); S3/R2 ObjectStore; user tokens + tenant API keys; tenant_id everywhere; summary/sentiment/compare endpoints; /v1 + OpenAPI; Dockerfile + staging deploy.
+- Order: T-024 -> (T-025 -> T-026 -> T-027) and (T-028) -> T-029 -> (T-030 -> T-031) and T-032 -> T-033. Frontend is BLOCKED until T-033 is done.
+- Eval metric names/thresholds in T-030/T-031 are planner proposals: evaluator to align with evals/thresholds.json. New env vars listed in spec P5 go in .env.example (human).
+
 ## Progress
 - Done on dev (944 tests, ruff clean): T-001..T-023. Last commit 6ac2220.
 - Evals (mock only, labelled so): recall@5 0.786 (<0.8), citation_correct 0.765 (<0.9), task_success 0.75 (<0.8) MISS; MRR, faithfulness, relevance, steps 7.75, injection 1.0 pass. `uv run python -m evals.run --mock --check` exits 1. Causes traced to the lexical FAKE reranker / toy answerer; needs a live eval. Do not add the CI step until resolved or waived.

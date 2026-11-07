@@ -12,6 +12,7 @@ Only the human (via Gate A) moves a ticket from draft to approved.
 | P2 | Read-only tools | T-013..T-015 | approved |
 | P3 | LangGraph agent, Ollama, SSE | T-016..T-019 | approved |
 | P4 | Sessions, injection defences, limits, golden-set evals | T-020..T-023 | approved |
+| P5 | Service platform: pgvector, object store, auth, tenancy, doc-intelligence, deploy (all before frontend) | T-024..T-033 | approved |
 
 ## Tickets
 
@@ -42,17 +43,27 @@ Parallel after T-001: T-002, T-003, T-005. After those: T-004 and T-006 chain; T
 | T-021 | P4 | Prompt-injection defences | M | T-019 | done |
 | T-022 | P4 | Rate limit, spend cap, PII-safe logs | M | T-019 | done |
 | T-023 | P4 | Golden set + eval script (eval: evaluator) | M | T-020, T-021, T-022 | done |
+| T-024 | P5 | ADR-0003: Postgres+pgvector, VectorStore/ObjectStore, auth and tenancy model (needs_architect) | S | - | approved |
+| T-025 | P5 | VectorStore interface + pgvector impl + docker compose dev DB | M | T-024 | approved |
+| T-026 | P5 | Move registry, sessions, BM25 metadata to Postgres; retire Chroma | M | T-025 | approved |
+| T-027 | P5 | ObjectStore (S3/R2 + local), persist originals, wire query_table table_loader | M | T-026 | approved |
+| T-028 | P5 | Service auth: user tokens + tenant API keys (needs_architect) | M | T-024 | approved |
+| T-029 | P5 | Multi-tenancy: tenant_id everywhere + per-tenant daily spend cap | M | T-026, T-028 | approved |
+| T-030 | P5 | Doc-intelligence endpoints: summary + sentiment with citations (eval: evaluator) | M | T-029 | approved |
+| T-031 | P5 | Cross-document comparison endpoint + evals (eval: evaluator) | M | T-030 | approved |
+| T-032 | P5 | /v1 versioning, OpenAPI spec, /health, CORS from env, docs off in prod | S | T-029 | approved |
+| T-033 | P5 | Dockerfile + staging(dev)/prod(main) deploy docs; deployer staging smoke | M | T-027, T-031, T-032 | approved |
 
 Estimated total: 18 M x $4 + 5 S x $1.50 = $79.50 (caps, not expected spend).
 
 ## Later (not built)
 
-- Frontend
-- Dev/prod environments and containers
+- Frontend (BLOCKED until all of P5 / T-033 is done)
+- Dev/prod environments and containers (now P5: T-033)
 - Performance, safety and security testing (load tests, p95 measurement, pen tests)
 - Complex-document handling (OCR, scanned PDFs, complex tables)
 - Full-architecture evals phase
-- Real auth replacing the `X-User-Id` header
+- Real auth replacing the `X-User-Id` header (now P5: T-028)
 - Git history rewrite for personal documents (human task)
 - Rotate the exposed `.env` OpenAI key (human task)
 - Reverse-proxy request body-size limit (Starlette spools multipart bodies before our 10 MB streaming cap runs); part of the environments/deploy phase.
