@@ -1,15 +1,92 @@
 name: ci
+
 on:
   pull_request:
   push:
-    branches: [dev]
+    branches: [dev, main]
+
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # All checks run on the deterministic mock LLM and fake models: no network model
+  # downloads, no paid API calls, no secrets needed.
+  LLM_PROVIDER: mock
+  MODELS_FAKE: "1"
+  UV_FROZEN: "1"
+
 jobs:
-  verify:
+  lint:
+    name: lint (ruff)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - run: uv sync --frozen
-      - run: uv run ruff check . && uv run pytest -q
+        with:
+          enable-cache: true
+      - run: uv sync
+      - run: uv run ruff check .
+
+  test:
+    name: tests (pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync
+      - run: uv run pytest -q
+
+  security-tests:
+    name: injection and limits tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync
+      - run: uv run pytest -q tests/test_injection.py tests/test_limits.py tests/test_logging.py
+
+  evals:
+    name: evals (mock thresholds)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Advisory until the live/real-reranker run resolves the known mock misses
+    # (recall@5, citation_correct, task_success; see docs/status.md). Flip to false
+    # to make this check blocking.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync
+      - run: uv run python -m evals.run --mock --check
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: evals/results.json
+          if-no-files-found: ignore
+
+  dependency-audit:
+    name: dependency audit (pip-audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Advisory: the audit has never been run (it needs network). Make it blocking
+    # once the first run is clean or its findings are triaged.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv export --frozen --no-hashes --no-emit-project -o requirements-audit.txt
+      - run: uvx pip-audit --disable-pip -r requirements-audit.txt
