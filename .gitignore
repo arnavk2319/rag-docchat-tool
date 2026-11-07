@@ -55,3 +55,22 @@ coverage.xml
 
 # Jupyter Notebooks checkpoints
 .ipynb_checkpoints/
+
+# local reference copy of the agent framework
+agentic-kit/
+
+# Local state and agent run data
+chroma_db/
+logs/
+worktrees/
+
+# T-001 additions
+.env
+*.sqlite
+*.sqlite-*
+logs/runs/
+.venv/
+.ruff_cache/
+
+# eval judge cache (live runs only)
+evals/.cache/
