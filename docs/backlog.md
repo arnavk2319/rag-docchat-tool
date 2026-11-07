@@ -22,7 +22,7 @@ Parallel after T-001: T-002, T-003, T-005. After those: T-004 and T-006 chain; T
 | T-001 | P0 | uv/pyproject, module layout, env, prompts, overview doc | M | - | done |
 | T-002 | P0 | Config, logging, llm wrapper with mock mode | M | T-001 | done |
 | T-003 | P0 | Fix prototype bugs | S | T-001 | done |
-| T-004 | P0 | Model registry in lifespan + threadpool | M | T-002, T-003 | approved |
+| T-004 | P0 | Model registry in lifespan + threadpool | M | T-002, T-003 | done |
 | T-005 | P0 | SQLite document registry | S | T-001 | done |
 | T-006 | P0 | Ingestion + embedded Chroma with doc_id metadata | M | T-004, T-005 | approved |
 | T-007 | P0 | Five endpoints (needs_architect) | M | T-002, T-006 | approved |
