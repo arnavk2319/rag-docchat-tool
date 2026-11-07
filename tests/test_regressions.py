@@ -77,13 +77,18 @@ def test_error_detail_does_not_leak_internals():
 def test_http_exception_log_has_no_dollar_placeholders(caplog):
     import asyncio
 
+    from app.api.deps import ApiError
     from app.main import http_exception_handle_logging
     from fastapi import HTTPException
 
     with caplog.at_level("ERROR", logger="uvicorn"):
-        asyncio.run(http_exception_handle_logging(None, HTTPException(status_code=400, detail="bad")))
+        asyncio.run(http_exception_handle_logging(None, ApiError(400, "x", "bad")))
     assert "$" not in caplog.text
     assert "400 bad" in caplog.text
+    caplog.clear()
+    with caplog.at_level("ERROR", logger="uvicorn"):  # non-ApiError details are not logged
+        asyncio.run(http_exception_handle_logging(None, HTTPException(status_code=400, detail="leak")))
+    assert "400" in caplog.text and "leak" not in caplog.text
 
 
 def test_import_main_opens_no_network():

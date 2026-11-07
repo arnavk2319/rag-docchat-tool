@@ -45,6 +45,10 @@ PURGE_EVERY_S = 60.0
 MARK = " ...[truncated]"
 
 
+class SessionLimitError(Exception):
+    pass
+
+
 class SessionMessage(BaseModel):
     role: str
     content: str
@@ -91,11 +95,20 @@ class SqliteSessions:
                 c.execute("DELETE FROM sessions WHERE session_id=?", (sid,))
         return len(ids)
 
-    def create(self, owner_id: str) -> str:
+    def create(self, owner_id: str, max_per_owner: int | None = None) -> str:
+        """Raises SessionLimitError when the owner already has `max_per_owner` live sessions."""
         self._maybe_purge()
         now = _now()
         sid = uuid.uuid4().hex
         with connect(self._path) as c:
+            c.execute("BEGIN IMMEDIATE")  # count + insert atomically (no race past the cap)
+            if max_per_owner is not None:
+                n = c.execute(
+                    "SELECT count(*) FROM sessions WHERE owner_id=? AND expires_at>?",
+                    (owner_id, now.isoformat()),
+                ).fetchone()[0]
+                if n >= max_per_owner:
+                    raise SessionLimitError
             c.execute("INSERT INTO sessions VALUES (?,?,?,?,?)",
                       (sid, owner_id, now.isoformat(), now.isoformat(), self._exp(now)))
         return sid

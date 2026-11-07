@@ -40,7 +40,7 @@ Parallel after T-001: T-002, T-003, T-005. After those: T-004 and T-006 chain; T
 | T-019 | P3 | Agent SSE endpoint (needs_architect) | M | T-017 | done |
 | T-020 | P4 | Per-session memory (needs_architect) | M | T-019 | done |
 | T-021 | P4 | Prompt-injection defences | M | T-019 | done |
-| T-022 | P4 | Rate limit, spend cap, PII-safe logs | M | T-019 | approved |
+| T-022 | P4 | Rate limit, spend cap, PII-safe logs | M | T-019 | done |
 | T-023 | P4 | Golden set + eval script (eval: evaluator) | M | T-020, T-021, T-022 | approved |
 
 Estimated total: 18 M x $4 + 5 S x $1.50 = $79.50 (caps, not expected spend).
@@ -71,3 +71,4 @@ Estimated total: 18 M x $4 + 5 S x $1.50 = $79.50 (caps, not expected spend).
 - T-020 (sessions): validate `session_id` before the stream opens, add a history param to `run_agent`, echo `session_id` in `final`.
 - T-022 (limits): rate-limit and spend-cap checks before the stream opens; record per-user spend from `final.usage`, including partial spend on disconnect.
 - T-021 re-review approved (round 2). Nits: link-opener floods (![]( repeated) cost up to ~120 ms per 20k call, lower the _IMAGE/_LINK target cap or short-circuit when no ) exists; tools.wrap can leave a harmless partial entity after truncation; homoglyph role words and plain-language social engineering remain known gaps.
+- T-022 follow-ups: per-IP rate limit (needs a trusted proxy); upload rate limit and stored-documents cap per owner; shared (Redis) limiter state for multi-worker.

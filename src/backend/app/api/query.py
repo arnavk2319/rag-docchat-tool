@@ -27,6 +27,7 @@ from .deps import (
     Bm25Dep,
     CurrentUser,
     ParentsDep,
+    QueryLease,
     RegistryDep,
     SessionsDep,
     StoreDep,
@@ -63,6 +64,22 @@ async def query(
     parents: ParentsDep,
     bm25: Bm25Dep,
     sessions: SessionsDep,
+    lease: QueryLease,
+) -> Any:
+    used: list[llm.Budget] = []
+    try:
+        result = await _query(request, body, user, registry, store, parents, bm25, sessions, lease, used)
+    except BaseException:
+        lease.finish(used[0].usd if used else 0.0)
+        raise
+    if not isinstance(result, StreamingResponse):  # a stream settles its own lease when it ends
+        lease.finish(used[0].usd if used else 0.0)
+    return result
+
+
+async def _query(
+    request: Request, body: QueryRequest, user: str, registry: Any, store: Any, parents: Any,
+    bm25: Any, sessions: Any, lease: Any, used: list[llm.Budget],
 ) -> Any:
     sid = body.session_id
     hist: list[dict[str, str]] = []
@@ -76,8 +93,9 @@ async def query(
     else:
         docs = [d for d in await run_blocking(registry.list_by_owner, user) if d.status == "ready"]
     names = {d.doc_id: d.filename for d in docs}
+    await run_blocking(lease.acquire)  # daily caps: after validation, before any LLM call/stream
     if body.stream:
-        return _sse_response(request, body, user, names, registry, store, parents, bm25, hist, sessions)
+        return _sse_response(request, body, user, names, registry, store, parents, bm25, hist, sessions, lease)
     if not names:
         return QueryResponse(answer=IDK, citations=[], abstained=True, session_id=sid)
 
@@ -110,6 +128,8 @@ async def query(
         for i, ph in enumerate(phits, 1)
     )
     prompt = load_prompt("answer")
+    tracker = llm.Budget(max_steps=10, max_tokens=10**9, max_usd=1e9)  # spend meter only
+    used.append(tracker)
     res = await llm.complete(
         [
             {
@@ -121,6 +141,7 @@ async def query(
         ],
         model_role="agent",
         max_tokens=1024,
+        budget=tracker,
     )
     best = await run_blocking(
         pick_cited_children, get_models().reranker, body.question, phits, hits
@@ -132,8 +153,8 @@ async def query(
             await run_blocking(
                 sessions.append_turn, user, sid, body.question, answer, [c.chunk_id for c in cites]
             )
-        except Exception:
-            log.exception("session store failed", extra={"session_id": sid})
+        except Exception as e:  # noqa: BLE001 - logged by class name only
+            log.error("session store failed", extra={"session_id": sid, "kind": type(e).__name__})
     return QueryResponse(
         answer=sanitize_output(answer), citations=cites, abstained=False, session_id=sid
     )
@@ -147,7 +168,7 @@ def _embed_sync(text: str) -> list[float]:
 def _sse_response(
     request: Request, body: QueryRequest, user: str, names: dict[str, str],
     registry: Any, store: Any, parents: Any, bm25: Any, hist: list[dict[str, str]],
-    sessions: Any,
+    sessions: Any, lease: Any,
 ) -> StreamingResponse:
     ctx = ToolContext(
         owner_id=user, doc_ids=list(names), registry=registry, vectors=store, parents=parents,
@@ -161,7 +182,10 @@ def _sse_response(
 
     return StreamingResponse(
         stream_agent(request, body.question, ctx, names, history=hist, session_id=sid,
-                     on_complete=on_complete),
+                     on_complete=on_complete, lease=lease),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+        headers={
+            "Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive",
+            **lease.headers,
+        },
     )

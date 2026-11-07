@@ -132,6 +132,7 @@ async def run_agent(
     on_event: Callable[[str, dict[str, Any]], None] | None = None,
     cancel: threading.Event | None = None,
     history: list[dict[str, str]] | None = None,
+    budget_out: list[llm.Budget] | None = None,
 ) -> AgentResult:
     s = get_settings()
     max_steps = max_steps or s.agent_max_steps
@@ -141,6 +142,8 @@ async def run_agent(
         max_usd=s.agent_max_usd if max_usd is None else max_usd,
     )
     budget.cancel = cancel
+    if budget_out is not None:  # lets the caller read spend even if this run is cancelled
+        budget_out.append(budget)
     ctx = replace(ctx, budget=budget, min_rerank_score=s.min_rerank_score)
     d = Deps(ctx=ctx, budget=budget, run_id=run_id or uuid.uuid4().hex[:12], emit=on_event)
     graph = build_graph(d, verify)

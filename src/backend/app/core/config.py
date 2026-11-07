@@ -32,8 +32,11 @@ class Settings(BaseSettings):
     min_rerank_score: float = 0.0  # env MIN_RERANK_SCORE; abstain if top rerank score is below
     models_fake: bool = False  # env MODELS_FAKE; test-only
     max_upload_mb: int = Field(default=10, gt=0)
-    rate_limit_per_min: int = Field(default=30, gt=0)
-    daily_usd_cap: float = Field(default=1.0, ge=0)
+    rate_limit_per_min: int = Field(default=30, gt=0)  # env RATE_LIMIT_PER_MIN (per user, /query + /summarize)
+    daily_usd_cap: float = Field(default=1.0, gt=0)  # env DAILY_USD_CAP per user per UTC day; must be > 0 (0 does NOT disable)
+    global_daily_usd_cap: float = Field(default=5.0, gt=0)  # env GLOBAL_DAILY_USD_CAP all users, UTC day
+    global_rate_limit_per_min: int = Field(default=120, gt=0)  # env GLOBAL_RATE_LIMIT_PER_MIN all users
+    session_max_per_owner: int = Field(default=100, gt=0)  # env SESSION_MAX_PER_OWNER (live sessions)
     agent_max_steps: int = Field(default=16, gt=0)
     agent_max_usd: float = Field(default=0.05, ge=0)
     summary_max_usd: float = Field(default=0.02, ge=0)  # env SUMMARY_MAX_USD

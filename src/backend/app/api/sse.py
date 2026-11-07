@@ -22,6 +22,8 @@ from typing import Any
 from fastapi import Request
 
 from ..core.config import get_settings
+from ..core.limits import Lease
+from ..core.llm import Budget
 from ..core.security import sanitize_output
 from ..services.agent.graph import AgentResult, run_agent
 from ..services.agent.tools import TOOLS, ToolContext, escape
@@ -132,6 +134,33 @@ async def stream_agent(
     history: list[dict[str, str]] | None = None,
     session_id: str | None = None,
     on_complete: Callable[[str, list[str]], Awaitable[None]] | None = None,
+    lease: Lease | None = None,
+) -> AsyncIterator[str]:
+    """`_stream_agent` plus spend accounting: the lease is settled with the run's actual USD
+    (partial on cancel/disconnect/budget stop) once the inner generator has fully cleaned up."""
+    used: list[Budget] = []
+    try:
+        async with contextlib.aclosing(_stream_agent(
+            request, question, ctx, names, history=history, session_id=session_id,
+            on_complete=on_complete, budget_out=used,
+        )) as frames:
+            async for f in frames:
+                yield f
+    finally:
+        if lease is not None:
+            lease.finish(used[0].usd if used else 0.0)
+
+
+async def _stream_agent(
+    request: Request,
+    question: str,
+    ctx: ToolContext,
+    names: dict[str, str],
+    *,
+    history: list[dict[str, str]] | None = None,
+    session_id: str | None = None,
+    on_complete: Callable[[str, list[str]], Awaitable[None]] | None = None,
+    budget_out: list[Budget] | None = None,
 ) -> AsyncIterator[str]:
     """Yield SSE frames. `names` = caller's ready docs (doc_id -> filename); empty = no run."""
     run_id = uuid.uuid4().hex[:12]
@@ -165,7 +194,7 @@ async def stream_agent(
             return await run_agent(
                 question, ctx, run_id=run_id, on_event=lambda n, p: q.put_nowait((n, p)),
                 cancel=cancel,
-                history=history,
+                history=history, budget_out=budget_out,
             )
         finally:
             q.put_nowait(("", {}))  # sentinel: wakes the consumer immediately
@@ -193,8 +222,8 @@ async def stream_agent(
             res = task.result()
         except asyncio.CancelledError:
             return
-        except Exception:
-            log.exception("agent stream failed", extra={"run_id": run_id})
+        except Exception as e:  # noqa: BLE001 - logged by class name only
+            log.error("agent stream failed", extra={"run_id": run_id, "kind": type(e).__name__})
             yield ev("error", {"code": "internal", "detail": "The run failed."})
             yield final("", [], "error", zero)
             return
@@ -211,8 +240,8 @@ async def stream_agent(
         if stopped == "done" and on_complete is not None:
             try:  # memory is best-effort: a store fault must not break a finished answer
                 await on_complete(res.answer, [c["doc_id"] for c in cites])
-            except Exception:
-                log.exception("session store failed", extra={"run_id": run_id})
+            except Exception as e:  # noqa: BLE001
+                log.error("session store failed", extra={"run_id": run_id, "kind": type(e).__name__})
         if stopped == "error":
             yield ev("error", {"code": "llm_unavailable", "detail": "The model could not produce a reply."})
         yield final(text, cites, stopped, usage)

@@ -5,9 +5,11 @@ from fastapi import FastAPI
 from starlette.exceptions import HTTPException
 
 from .api import documents, query, sessions, summarize
+from .api.deps import ApiError
 from .api.errors import http_error, install_error_handlers
 from .core.concurrency import run_blocking
 from .core.config import get_settings
+from .core.limits import RateLimiter, SpendLedger
 from .core.llm import validate_provider
 from .core.models import load_models, models_fake, models_loaded, reset_models
 from .services.ingestion import IngestionService
@@ -16,6 +18,7 @@ from .store.chroma import ChromaStore
 from .store.parents import SqliteParents
 from .store.registry import SqliteRegistry
 from .store.sessions import SqliteSessions
+from .store.spend import SqliteSpend
 from .utilities.logging_module import logger
 
 tracemalloc.start()
@@ -51,6 +54,20 @@ async def lifespan(app: FastAPI):
             )  # also purges expired sessions at startup
         )
         created.append("sessions")
+    if getattr(state, "limiter", None) is None:
+        state.limiter = RateLimiter(settings.rate_limit_per_min)
+        created.append("limiter")
+    if getattr(state, "global_limiter", None) is None:
+        state.global_limiter = RateLimiter(settings.global_rate_limit_per_min, max_users=1)
+        created.append("global_limiter")
+    if getattr(state, "ledger", None) is None:
+        state.ledger = await run_blocking(
+            lambda: SpendLedger(
+                SqliteSpend(settings.db_path), settings.daily_usd_cap,
+                global_cap_usd=settings.global_daily_usd_cap,
+            )
+        )
+        created.append("ledger")
     if getattr(state, "ingestion", None) is None:
         state.ingestion = IngestionService(
             state.registry, state.store, parents=state.parents, bm25=state.bm25
@@ -73,7 +90,9 @@ app.include_router(sessions.router)
 
 
 async def http_exception_handle_logging(request, exc: HTTPException):
-    logger.error("HTTPException: %s %s", exc.status_code, exc.detail)
+    # Detail only for our own ApiError (fixed strings); framework/other details may echo input.
+    detail = exc.detail if isinstance(exc, ApiError) else "-"
+    logger.error("HTTPException: %s %s", exc.status_code, detail)
     return http_error(exc)
 
 

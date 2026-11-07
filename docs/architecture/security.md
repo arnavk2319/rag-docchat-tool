@@ -48,6 +48,38 @@ chars, role markers, URLs or extra delimiters. Mutation checks: disabling owner 
 `test_mutation_*`); disabling the sanitiser drops the rate to 0.0. Block rate 10/10 = 1.00 (threshold `safety.injection_block_rate` 0.9 in
 `evals/thresholds.json`; the test fails below it and prints `EVAL injection_block_rate=...`).
 
+## Abuse limits and logging (T-022)
+
+- **Order**: auth -> per-user rate limit -> daily cap -> (404/409 checks) -> LLM. Limit rejections are plain JSON
+  `{detail, code}` 429s raised before any SSE stream opens or LLM call, on `/v1/query` (JSON and stream) and
+  `/v1/summarize`. Headers on every limited-endpoint response: `X-RateLimit-Limit/Remaining/Reset`; rejections add `Retry-After`.
+- **Rate limit** (`core/limits.py`): sliding 60 s window, `RATE_LIMIT_PER_MIN` (default 30) per authenticated owner id,
+  in-process. Memory is bounded: idle users are swept each window and at most 10 000 users are tracked (new ids refused when full of active users), so spraying
+  `X-User-Id` values cannot grow state. Code `rate_limited`.
+- **Daily spend cap**: `DAILY_USD_CAP` (default 1.0, must be > 0: 0 is a startup validation error, never "unlimited") per owner per UTC day, table `daily_spend` in the
+  SQLite DB (created with CREATE IF NOT EXISTS). Code `spend_cap_exceeded`. Reservation happens in the handler after body/doc/session validation (so 422/404 hold nothing) and before any LLM call or stream. Each run reserves its max USD
+  (`AGENT_MAX_USD` / `SUMMARY_MAX_USD`) in memory; a request is refused when spent + in-flight reservations >= cap, so
+  concurrent requests cannot all slip past; overshoot is at most one run's max. The reservation is reconciled to the
+  actual `Budget.usd` when the run ends, including client disconnect, cancel, budget stop and errors. Leaked
+  reservations expire after 15 min. A run straddling UTC midnight is billed to the day it settles. Settling is a small
+  synchronous SQLite write, kept sync on purpose so it still completes during cancellation.
+- **Global ceilings** (X-User-Id is trust-the-header, so invented ids multiply per-user quotas): `GLOBAL_RATE_LIMIT_PER_MIN`
+  (default 120, 429 `global_rate_limited`) and `GLOBAL_DAILY_USD_CAP` (default 5.0, 429 `global_spend_cap_exceeded`),
+  reserved/settled under the fixed key `*` (not a valid user id). When the 10 000-user limiter table is full of active
+  users, NEW ids are refused (429 `rate_limited`) instead of evicting old entries, so an id flood cannot reset a victim's window.
+- **Sessions**: `SESSION_MAX_PER_OWNER` (default 100) live sessions per owner, 429 `session_limit_exceeded`
+  (count + insert in one transaction).
+- **Logging**: log calls carry ids, sizes, timings, tokens, USD and exception class names only. Never document text,
+  questions, answers, prompts, filenames or tool args; no `log.exception` (tracebacks carry message text); HTTP error
+  details are logged only for our own fixed-string `ApiError`. Enforced by `tests/test_logging.py` (sentinel strings in
+  document, filename, question and LLM error text never reach captured logs) and an AST scan of `src` for f-string/
+  sensitive-name log calls.
+
+**GATE B / PRODUCTION NOTE.** `X-User-Id` is trust-the-header, so per-user limits are only as strong as authentication:
+do not expose this service publicly without real auth. Limiter and ledger reservations are per-process (a multi-worker
+deploy needs a shared store such as Redis). Failed LLM calls that return no usage are uncharged. Set a provider-side hard
+budget as the last backstop. Per-IP limiting is a backlog item (only meaningful behind a trusted proxy).
+
 ## Known gaps
 
 - Homoglyph role words (Cyrillic `\u0455ystem:`) are not folded by NFKC and are not rewritten; they stay inert DATA

@@ -85,7 +85,8 @@ def _remember(key: str, summary: str) -> None:
 
 
 async def summarize_documents(
-    docs: Sequence[DocText], max_usd: float | None = None, cancel: Any = None
+    docs: Sequence[DocText], max_usd: float | None = None, cancel: Any = None,
+    budget_out: list[Budget] | None = None,
 ) -> SummaryResult:
     s = get_settings()
     key = _cache_key(docs, s.summary_reduce_role, s.summary_compress, s.summary_batch_chars)
@@ -108,6 +109,8 @@ async def summarize_documents(
         max_tokens=10_000_000,
         max_usd=s.summary_max_usd if max_usd is None else min(s.summary_max_usd, max_usd),
     )
+    if budget_out is not None:
+        budget_out.append(budget)
     budget.cancel = cancel  # threading.Event | None: checked before every LLM call
     map_p, red_p = load_prompt("summarize_map"), load_prompt("summarize_reduce")
     partials: list[tuple[str, str]] = []

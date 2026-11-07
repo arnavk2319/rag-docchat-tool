@@ -3,6 +3,8 @@
 from fastapi import APIRouter, Response
 
 from ..core.concurrency import run_blocking
+from ..core.config import get_settings
+from ..store.sessions import SessionLimitError
 from .deps import ApiError, CurrentUser, SessionsDep
 from .schemas import ErrorBody, SessionCreated, SessionMessageOut, SessionOut
 
@@ -14,9 +16,13 @@ def not_found() -> ApiError:
     return ApiError(404, "not_found", "Session not found")  # same for unknown and foreign
 
 
-@router.post("", status_code=201, response_model=SessionCreated, responses={401: {"model": ErrorBody}})
+@router.post("", status_code=201, response_model=SessionCreated, responses={401: {"model": ErrorBody}, 429: {"model": ErrorBody}})
 async def create_session(user: CurrentUser, sessions: SessionsDep) -> SessionCreated:
-    return SessionCreated(session_id=await run_blocking(sessions.create, user))
+    try:
+        sid = await run_blocking(sessions.create, user, get_settings().session_max_per_owner)
+    except SessionLimitError:
+        raise ApiError(429, "session_limit_exceeded", "Too many sessions; delete one first") from None
+    return SessionCreated(session_id=sid)
 
 
 @router.get("/{session_id}", response_model=SessionOut, responses=_ERR)
