@@ -10,12 +10,12 @@ Updated: 2026-11-07 · Mode: autopilot · Phase: P0 (foundation) finishing, P1 s
 - No Anthropic key; build and all tests run on LLM_PROVIDER=mock. No paid API is called by agents.
 
 ## Progress
-- Done on dev (329 tests): T-001 uv layout, T-002 config + llm wrapper, T-003 upload hardening, T-004 model registry + parsers, T-005 SQLite registry, T-006 ingestion + embedded Chroma, T-018 Ollama provider.
-- In flight: T-009 parent-child chunking (tests being written), T-007 five endpoints (implementing).
-- Next: T-008 upload hardening, then P1 (T-010 hybrid, T-011 rerank/citations, T-012 map-reduce).
+- Done on dev (443 tests): T-001 uv layout, T-002 config + llm wrapper, T-003 upload hardening, T-004 model registry + parsers, T-005 SQLite registry, T-006 ingestion + embedded Chroma, T-009 parent-child chunking, T-018 Ollama provider.
+- In flight: T-007 five endpoints (merging dev, then tests and review).
+- Next: T-008 upload hardening, then P1 (T-010 hybrid, T-011 rerank/citations, T-012 map-reduce) after the budget resets.
 
 ## Budget
-- BUDGET WARN: day spend $21.26 of $30.00 (71%) at 2026-11-07. The guard stops the run at 100%; resume next day or raise `day_usd` in .claude/budgets.json (human-only file).
+- BUDGET WARN: day spend $25.55 of $30.00 (85%) on 2026-11-07 (week $25.55 of $90). Plan: finish T-007 and T-008 (closes P0), then pause at the ticket boundary; resume P1 (T-010+) tomorrow or after the human raises `day_usd` in .claude/budgets.json (human-only). About $16.50 of today's spend is orchestrator overhead from the long session.
 
 ## Open (human)
 - Add to .env.example (agents cannot touch it): EMBED_MODEL=sentence-transformers/all-MiniLM-L6-v2, RERANK_MODEL=BAAI/bge-reranker-base, MODELS_FAKE= (test-only, leave empty), OLLAMA_AGENT_MODEL=llama3.1:8b, OLLAMA_FAST_MODEL=llama3.2:3b.
