@@ -1,23 +1,18 @@
 """Shared helpers for summarize/query: doc resolution, embedding, prompt context building."""
 
-import re
 from collections.abc import Sequence
 from typing import Any
 
 from ..core.concurrency import run_blocking
 from ..core.models import get_models
+from ..core.security import sanitize_untrusted
 from ..store.chroma import Hit
 from ..store.parents import SqliteParents
 from ..store.registry import Document, Registry
 from .deps import ApiError
 from .schemas import Citation, Span
 
-_TAG = re.compile(r"[<>]")
-
-
-def escape(text: str) -> str:
-    """Neutralise angle brackets so retrieved text cannot close or forge prompt tags."""
-    return _TAG.sub(lambda m: "&lt;" if m.group() == "<" else "&gt;", text)
+escape = sanitize_untrusted  # retrieved text: shared pipeline from core.security
 
 
 async def resolve_ready_docs(registry: Registry, owner: str, doc_ids: Sequence[str]) -> list[Document]:

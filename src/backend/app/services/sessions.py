@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
 
-_TAG = re.compile(r"[<>]")
+from ..core.security import sanitize_untrusted
 
-
-def _esc(t: str) -> str:
-    return _TAG.sub(lambda m: "&lt;" if m.group() == "<" else "&gt;", t)
+_esc = sanitize_untrusted  # stored turns are re-sanitised at read time (storage is unchanged)
 
 
 def history_block(history: Sequence[dict[str, str]] | None) -> str:

@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from ..core import llm
 from ..core.llm import Budget, BudgetExceeded, LLMError
 from ..core.prompts import load_prompt
+from ..core.security import sanitize_untrusted
 
 _SENT = re.compile(r"(?<=[.!?])\s+|\n{2,}")
 _WORD = re.compile(r"[a-z0-9]{3,}")
@@ -64,8 +65,7 @@ def _key(text: str, focus: str, version: int) -> str:
     return h.hexdigest()
 
 
-def _escape(text: str) -> str:
-    return text.replace("<", "&lt;").replace(">", "&gt;")
+_escape = sanitize_untrusted  # shared pipeline from core.security
 
 
 async def compress_text(

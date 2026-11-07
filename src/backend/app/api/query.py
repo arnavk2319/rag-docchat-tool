@@ -17,6 +17,7 @@ from ..core.concurrency import run_blocking
 from ..core.config import get_settings
 from ..core.models import get_models
 from ..core.prompts import load_prompt
+from ..core.security import sanitize_output
 from ..services.agent.tools import ToolContext
 from ..services.parent_lookup import expand_to_parents
 from ..services.rerank import pick_cited_children, rerank_parents
@@ -133,7 +134,9 @@ async def query(
             )
         except Exception:
             log.exception("session store failed", extra={"session_id": sid})
-    return QueryResponse(answer=answer, citations=cites, abstained=False, session_id=sid)
+    return QueryResponse(
+        answer=sanitize_output(answer), citations=cites, abstained=False, session_id=sid
+    )
 
 
 def _embed_sync(text: str) -> list[float]:

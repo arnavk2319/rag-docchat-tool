@@ -22,6 +22,7 @@ from typing import Any
 from fastapi import Request
 
 from ..core.config import get_settings
+from ..core.security import sanitize_output
 from ..services.agent.graph import AgentResult, run_agent
 from ..services.agent.tools import TOOLS, ToolContext, escape
 
@@ -197,11 +198,11 @@ async def stream_agent(
             yield ev("error", {"code": "internal", "detail": "The run failed."})
             yield final("", [], "error", zero)
             return
-        text = escape(res.answer)
+        text = sanitize_output(res.answer)
         for piece in _WORDS.findall(text):
             yield ev("token", {"text": piece})
         cites = [
-            {"doc_id": c["doc_id"], "filename": escape(names[c["doc_id"]]), "span": escape(c["span"])}
+            {"doc_id": c["doc_id"], "filename": escape(names[c["doc_id"]]), "span": sanitize_output(c["span"])}
             for c in res.citations if c["doc_id"] in allowed
         ]
         yield ev("citations", {"citations": cites})

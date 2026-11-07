@@ -21,7 +21,8 @@ from pydantic import BaseModel, Field
 from ...core import llm
 from ...core.config import get_settings
 from ...core.prompts import load_prompt
-from .tools import TOOLS, ToolContext, escape, run_tool
+from ...core.security import escape, sanitize_untrusted
+from .tools import TOOLS, ToolContext, run_tool
 
 log = logging.getLogger("app.agent")
 MAX_HISTORY_ITEMS = 8
@@ -142,13 +143,13 @@ def _history_text(history: list[dict[str, str]]) -> str:
     if not history:
         return "(none)"
     return "\n".join(
-        f"[{i}] tool={h['tool']} args={escape(h['args'])}\n{h['result']}"
+        f"[{i}] tool={h['tool']} args={sanitize_untrusted(h['args'])}\n{h['result']}"
         for i, h in enumerate(history[-MAX_HISTORY_ITEMS:], 1)
     )
 
 
 def _q(state: AgentState) -> str:
-    return state.get("convo", "") + escape(state["question"])
+    return state.get("convo", "") + sanitize_untrusted(state["question"])
 
 
 async def router(state: AgentState, d: Deps) -> AgentState:
@@ -166,7 +167,7 @@ async def router(state: AgentState, d: Deps) -> AgentState:
 async def plan(state: AgentState, d: Deps) -> AgentState:
     q = _q(state)
     if state.get("rewrite"):
-        q += f"\nSuggested search query (data): {escape(state['rewrite'])}"
+        q += f"\nSuggested search query (data): {sanitize_untrusted(state['rewrite'])}"
     p = load_prompt("agent_plan").render(
         tools=_tool_catalog(), question=q, history=_history_text(state.get("history", []))
     )
@@ -296,7 +297,7 @@ async def groundedness(state: AgentState, d: Deps) -> AgentState:
     stop = ""
     for attempt in range(MAX_REGENERATE + 1):
         p = load_prompt("agent_grounded").render(
-            question=_q(state), history=_history_text(hist), draft=escape(draft)
+            question=_q(state), history=_history_text(hist), draft=sanitize_untrusted(draft)
         )
         try:
             out, stop = await _judge(d, p, GroundedOut, 100)

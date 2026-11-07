@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from ...core import llm
 from ...core.prompts import load_prompt
+from ...core.security import escape, sanitize_untrusted
 from ..parent_lookup import expand_to_parents
 from ..rerank import pick_cited_children, rerank_parents
 from ..retrieval import TOP_N, hybrid_search
@@ -39,7 +40,6 @@ MAX_COMPARE_DOCS = 5
 COMPARE_PER_DOC = 3
 COMPARE_EXCERPT_CHARS = 1000
 NOT_FOUND = "not found"
-_ESC = str.maketrans({"<": "&lt;", ">": "&gt;", "&": "&amp;"})
 
 
 @dataclass
@@ -63,14 +63,9 @@ def _note(ctx: ToolContext, doc_id: str, span: str = "") -> None:
     ctx.surfaced.setdefault(doc_id, span)
 
 
-def escape(text: str) -> str:
-    """Neutralise angle brackets (and &) so data cannot forge or close a delimiter."""
-    return text.translate(_ESC)
-
-
 def wrap(body: str, ok: bool = True) -> str:
     """Escape, bound and wrap a tool result in <tool_result> delimiters."""
-    body = escape(body)
+    body = sanitize_untrusted(body)
     cap = MAX_RESULT_CHARS
     if len(body) > cap:
         body = body[:cap] + "\n[truncated]"
@@ -253,7 +248,7 @@ def _compare(ctx: ToolContext, a: CompareArgs) -> str:
         ranked = rerank_parents(ctx.reranker, a.focus, cands, COMPARE_PER_DOC)
         text = "\n".join(ph.parent.text[:COMPARE_EXCERPT_CHARS] for ph, _ in ranked)
         blocks.append(f'<excerpt doc_id="{d.doc_id}" file="{escape(d.filename)}">\n'
-                      f"{escape(text) or '(no relevant text)'}\n</excerpt>")
+                      f"{sanitize_untrusted(text) or '(no relevant text)'}\n</excerpt>")
     prompt = load_prompt("compare").render(focus=escape(a.focus), excerpts="\n".join(blocks))
     try:
         res = _run_async(llm.complete(

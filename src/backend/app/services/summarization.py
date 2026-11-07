@@ -17,12 +17,12 @@ from ..core import llm
 from ..core.config import get_settings
 from ..core.llm import Budget, BudgetExceeded, LLMError
 from ..core.prompts import load_prompt
+from ..core.security import sanitize_untrusted
 from . import compression
 
 log = logging.getLogger("app.summarization")
 _CACHE_MAX = 128
 _cache: OrderedDict[str, str] = OrderedDict()
-_ESC = str.maketrans({"<": "&lt;", ">": "&gt;"})
 
 
 @dataclass(frozen=True)
@@ -118,7 +118,7 @@ async def summarize_documents(
                 text = await compression.compress_text(text, "summarize the main points", budget=budget)
             res = await llm.complete(
                 [{"role": "user", "content": map_p.render(
-                    name=name.translate(_ESC), part=str(part), text=text.translate(_ESC))}],
+                    name=sanitize_untrusted(name), part=str(part), text=sanitize_untrusted(text))}],
                 model_role="fast",
                 max_tokens=300,
                 budget=budget,
@@ -141,7 +141,7 @@ async def _reduce(
 ) -> str:
     if len(partials) == 1:
         return partials[0][1]
-    items = [f'<partial document="{n.translate(_ESC)}">{p.translate(_ESC)}</partial>' for n, p in partials]
+    items = [f'<partial document="{sanitize_untrusted(n)}">{sanitize_untrusted(p)}</partial>' for n, p in partials]
     # Hierarchical collapse when the partials do not fit one reduce call.
     while sum(len(i) for i in items) > batch_chars and len(items) > 1:
         grouped, cur, size = [], [], 0
@@ -157,7 +157,7 @@ async def _reduce(
         items = []
         for g in grouped:
             out = await _reduce_call("\n".join(g), prompt, role, budget)
-            items.append(f"<partial>{out.translate(_ESC)}</partial>")
+            items.append(f"<partial>{sanitize_untrusted(out)}</partial>")
     return await _reduce_call("\n".join(items), prompt, role, budget)
 
 

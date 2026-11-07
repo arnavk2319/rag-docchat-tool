@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends
 
 from ..core.concurrency import run_blocking
+from ..core.security import sanitize_output
 from ..services.summarization import DocText, summarize_documents
 from .deps import CurrentUser, ParentsDep, RegistryDep, json_body_limit
 from .rag import resolve_ready_docs
@@ -32,4 +33,4 @@ async def summarize(
         plist = await run_blocking(parents.list_doc_parents, user, d.doc_id)
         texts.append(DocText(d.filename, [p.text for p in plist]))
     res = await summarize_documents(texts)  # LLMError -> 502 via app exception handlers
-    return SummarizeResponse(summary=res.summary, doc_ids=ids, partial=res.partial)
+    return SummarizeResponse(summary=sanitize_output(res.summary), doc_ids=ids, partial=res.partial)
