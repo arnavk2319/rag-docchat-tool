@@ -15,10 +15,9 @@ from typing import Any
 from anyio import from_thread
 from pydantic import BaseModel
 
-from .base import ChunkRecord, ScoredChunk, VectorStore
+from .base import DEFAULT_TENANT, ChunkRecord, ScoredChunk, VectorStore
 
 MAX_K = 200  # VectorStore.query upper bound
-DEFAULT_TENANT = "default"  # single-tenant until T-029 threads the verified tenant through
 
 
 class Hit(BaseModel):
@@ -57,6 +56,10 @@ def run_sync[T](coro: Coroutine[Any, Any, T]) -> T:
 class SyncVectors:
     def __init__(self, inner: VectorStore, tenant_id: str = DEFAULT_TENANT) -> None:
         self.inner, self.tenant_id = inner, tenant_id
+
+    def for_tenant(self, tenant_id: str) -> SyncVectors:
+        """View bound to the authenticated tenant; every call carries its tenant filter."""
+        return SyncVectors(self.inner, tenant_id)
 
     def add(
         self, ids: Sequence[str], embeddings: Sequence[Sequence[float]],

@@ -85,6 +85,7 @@ async def lifespan(app: FastAPI):
             lambda: SpendLedger(
                 SqliteSpend(settings.db_path), settings.daily_usd_cap,
                 global_cap_usd=settings.global_daily_usd_cap,
+                tenant_cap_usd=settings.tenant_daily_usd_cap,
             )
         )
         created.append("ledger")

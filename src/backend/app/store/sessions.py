@@ -9,6 +9,7 @@ Synchronous: async callers wrap calls in run_blocking.
 
 from __future__ import annotations
 
+import copy
 import json
 import sqlite3
 import threading
@@ -22,6 +23,7 @@ from pydantic import BaseModel
 
 from app.core.llm import _approx_tokens
 from app.store.sqlite import connect, init_db
+from app.vectorstore.base import DEFAULT_TENANT
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
@@ -52,6 +54,7 @@ class SessionLimitError(Exception):
 
 
 class SessionMessage(BaseModel):
+    tenant_id: str = DEFAULT_TENANT
     role: str
     content: str
     citation_ids: list[str] = []
@@ -78,6 +81,7 @@ class SessionStore(Protocol):
         self, owner_id: str, sid: str, question: str, answer: str, citation_ids: list[str]
     ) -> bool: ...
     def delete(self, owner_id: str, sid: str) -> bool: ...
+    def for_tenant(self, tenant_id: str) -> SessionStore: ...
 
 
 def bound_messages(msgs: list[SessionMessage], max_messages: int, max_tokens: int) -> list[SessionMessage]:
@@ -100,28 +104,40 @@ class InMemorySessions:
         self.ttl = timedelta(hours=ttl_hours)
         self._now = clock
         self._s: dict[str, tuple[str, datetime, list[SessionMessage]]] = {}  # sid -> owner, exp, msgs
+        self._tenant_of: dict[str, str] = {}  # sid -> tenant (shared by all tenant views)
         self._lock = threading.Lock()
+        self._t = DEFAULT_TENANT
+
+    def for_tenant(self, tenant_id: str) -> InMemorySessions:
+        """View over the same storage; sessions of other tenants look unknown."""
+        v = copy.copy(self)
+        v._t = tenant_id
+        return v
 
     def purge_expired(self) -> int:
         with self._lock:
             dead = [k for k, (_, exp, _) in self._s.items() if exp <= self._now()]
             for k in dead:
                 del self._s[k]
+                self._tenant_of.pop(k, None)
         return len(dead)
 
     def _live(self, owner_id: str, sid: str):
         row = self._s.get(sid)
-        return row if row and row[0] == owner_id and row[1] > self._now() else None
+        ok = row and row[0] == owner_id and row[1] > self._now() and self._tenant_of.get(sid) == self._t
+        return row if ok else None
 
     def create(self, owner_id: str, max_per_owner: int | None = None) -> str:
         with self._lock:
             now = self._now()
             if max_per_owner is not None and sum(
-                1 for o, exp, _ in self._s.values() if o == owner_id and exp > now
+                1 for k, (o, exp, _) in self._s.items()
+                if o == owner_id and exp > now and self._tenant_of.get(k) == self._t
             ) >= max_per_owner:
                 raise SessionLimitError
             sid = uuid.uuid4().hex
             self._s[sid] = (owner_id, now + self.ttl, [])
+            self._tenant_of[sid] = self._t
         return sid
 
     def exists(self, owner_id: str, sid: str) -> bool:
@@ -145,8 +161,9 @@ class InMemorySessions:
             if row is None:
                 return False
             msgs = row[2] + [
-                SessionMessage(role="user", content=_clip(question, cap), created_at=now),
-                SessionMessage(role="assistant", content=_clip(answer, cap),
+                SessionMessage(tenant_id=self._t, role="user", content=_clip(question, cap),
+                               created_at=now),
+                SessionMessage(tenant_id=self._t, role="assistant", content=_clip(answer, cap),
                                citation_ids=[str(i) for i in citation_ids], created_at=now),
             ]
             self._s[sid] = (owner_id, now + self.ttl,
@@ -156,9 +173,10 @@ class InMemorySessions:
     def delete(self, owner_id: str, sid: str) -> bool:
         with self._lock:
             row = self._s.get(sid)
-            if row is None or row[0] != owner_id:
+            if row is None or row[0] != owner_id or self._tenant_of.get(sid) != self._t:
                 return False
             del self._s[sid]
+            self._tenant_of.pop(sid, None)
         return True
 
 
@@ -174,6 +192,10 @@ class SqliteSessions:
         self._last_purge = 0.0
         init_db(self._path, _SCHEMA)  # CREATE IF NOT EXISTS: safe on an existing registry DB
         self.purge_expired()  # at startup
+
+    def for_tenant(self, tenant_id: str) -> SqliteSessions:
+        """Legacy single-tenant store (tests/dev only): not tenant-aware, returns itself."""
+        return self
 
     def _exp(self, now: datetime) -> str:
         return (now + self.ttl).isoformat()

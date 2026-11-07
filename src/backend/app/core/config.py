@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     max_upload_mb: int = Field(default=10, gt=0)
     rate_limit_per_min: int = Field(default=30, gt=0)  # env RATE_LIMIT_PER_MIN (per user, /query + /summarize)
     daily_usd_cap: float = Field(default=1.0, gt=0)  # env DAILY_USD_CAP per user per UTC day; must be > 0 (0 does NOT disable)
+    tenant_daily_usd_cap: float = Field(default=2.0, gt=0)  # env TENANT_DAILY_USD_CAP all users of one tenant, UTC day
     global_daily_usd_cap: float = Field(default=5.0, gt=0)  # env GLOBAL_DAILY_USD_CAP all users, UTC day
     global_rate_limit_per_min: int = Field(default=120, gt=0)  # env GLOBAL_RATE_LIMIT_PER_MIN all users
     session_max_per_owner: int = Field(default=100, gt=0)  # env SESSION_MAX_PER_OWNER (live sessions)

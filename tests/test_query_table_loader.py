@@ -39,3 +39,20 @@ async def test_query_table_via_loader(tmp_path):
     await objs.delete("default", svc.original_key(doc))
     out2 = await asyncio.to_thread(run_tool, "query_table", {"doc_id": doc.doc_id}, ctx)
     assert 'status="ok"' not in out2
+
+
+async def test_loader_uses_document_tenant_not_default(tmp_path):
+    from app.store.registry import InMemoryRegistry
+
+    root, objs = InMemoryRegistry(), LocalObjectStore(tmp_path / "o")
+    reg_a, reg_b = root.for_tenant("ta"), root.for_tenant("tb")
+    svc = IngestionService(
+        reg_a, make_store().inner, FakeEmbedder(), parents=SqliteParents(tmp_path / "p.db"),
+        objects=objs, tenant_id="ta",
+    )
+    doc = await svc.ingest("alice", str(FIX / "sales.csv"), "sales.csv", "text/csv")
+    assert doc.status == "ready" and doc.tenant_id == "ta"
+    got = await asyncio.to_thread(make_table_loader(objs, reg_a), "alice", doc.doc_id)
+    assert got == (FIX / "sales.csv").read_bytes()
+    assert make_table_loader(objs, reg_b)("alice", doc.doc_id) is None  # other tenant, same owner id
+    assert make_table_loader(objs, reg_a)("bob", doc.doc_id) is None

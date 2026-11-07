@@ -3,7 +3,7 @@
 from app.core.auth import mint_token
 
 TEST_SECRET = "test-fixture-secret-0123456789-abcdefghij"  # >= 32 bytes, tests only
-TENANT = "t1"
+TENANT = "default"
 
 
 def bearer(user: str) -> dict[str, str]:

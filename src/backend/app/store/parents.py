@@ -59,6 +59,12 @@ class SqliteParents:
     def _conn(self) -> AbstractContextManager[sqlite3.Connection]:
         return connect(self._path)
 
+    def for_tenant(self, tenant_id: str):
+        """Owner keys are namespaced by tenant (store/scoped.py)."""
+        from app.store.scoped import TenantParents
+
+        return TenantParents(self, tenant_id)
+
     def replace_doc(self, owner_id: str, doc_id: str, parents: Sequence[Parent]) -> None:
         """Atomically replace all parents of a document (one transaction)."""
         if not owner_id:

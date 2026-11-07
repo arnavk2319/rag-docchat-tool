@@ -38,6 +38,12 @@ class Bm25Store:
         self._merged: dict[str, tuple[list[str], list[str], list[list[str]], BM25Okapi]] = {}
         self._lock = threading.Lock()
 
+    def for_tenant(self, tenant_id: str):
+        """Owner keys are namespaced by tenant (store/scoped.py)."""
+        from app.store.scoped import TenantBm25
+
+        return TenantBm25(self, tenant_id)
+
     def has_owner(self, owner_id: str) -> bool:
         return owner_id in self._loaded
 

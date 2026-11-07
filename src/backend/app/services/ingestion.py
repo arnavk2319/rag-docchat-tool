@@ -13,6 +13,7 @@ Failure reasons stored/logged are short codes, never document text.
 from __future__ import annotations
 
 import asyncio
+import copy
 import hashlib
 import logging
 import os
@@ -120,6 +121,14 @@ class IngestionService:
                 raise TypeError("pass an explicit parents store for non-SQLite registries")
             parents = SqliteParents(registry.db_path)
         self._parents = parents
+
+    def for_tenant(self, tenant_id: str) -> IngestionService:
+        """Copy bound to the authenticated tenant (registry, vectors, parents, BM25 all scoped)."""
+        v = copy.copy(self)
+        v._reg, v._tenant = self._reg.for_tenant(tenant_id), tenant_id
+        v._parents = self._parents.for_tenant(tenant_id)
+        v._bm25 = self._bm25.for_tenant(tenant_id) if self._bm25 is not None else None
+        return v
 
     def _emb(self) -> Any:
         if self._embedder is None:

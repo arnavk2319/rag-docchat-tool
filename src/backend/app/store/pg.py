@@ -1,12 +1,13 @@
 """Postgres Registry and SessionStore (sync psycopg_pool.ConnectionPool; callers use run_blocking).
 
-Bound to one tenant at construction (single-tenant until T-029 passes the verified tenant per call).
+Bound to one tenant per instance; `for_tenant(tid)` returns a view for the authenticated tenant.
 Every statement filters on tenant_id and owner_id and binds values as parameters (schema:
 migrations/0001_init.sql). `pool` may be any object with the same `.connection()` surface.
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import time
 import uuid
@@ -29,9 +30,9 @@ _DOC_COLS = (
 )
 
 
-def _doc(r: tuple) -> Document:
+def _doc(r: tuple, tenant_id: str = DEFAULT_TENANT) -> Document:
     return Document(
-        doc_id=r[0], owner_id=r[1], filename=r[2], mime=r[3], size=r[4], sha256=r[5],
+        tenant_id=tenant_id, doc_id=r[0], owner_id=r[1], filename=r[2], mime=r[3], size=r[4], sha256=r[5],
         pages_or_sheets=r[6], created_at=r[7], status=r[8], failure_reason=r[9],
     )
 
@@ -39,6 +40,9 @@ def _doc(r: tuple) -> Document:
 class PostgresRegistry:
     def __init__(self, pool: Any, tenant_id: str = DEFAULT_TENANT) -> None:
         self._pool, self._t = pool, tenant_id
+
+    def for_tenant(self, tenant_id: str) -> PostgresRegistry:
+        return PostgresRegistry(self._pool, tenant_id)
 
     def create(self, owner_id, filename, mime, size, sha256, pages_or_sheets=0, status="pending") -> str:
         return self.create_if_absent(
@@ -66,7 +70,7 @@ class PostgresRegistry:
                 f"SELECT {_DOC_COLS} FROM documents WHERE tenant_id=%s AND owner_id=%s AND sha256=%s",
                 (self._t, owner_id, sha256),
             ).fetchone()
-        return _doc(row), created
+        return _doc(row, self._t), created
 
     def get_by_sha256(self, owner_id: str, sha256: str) -> Document | None:
         with self._pool.connection() as c:
@@ -74,7 +78,7 @@ class PostgresRegistry:
                 f"SELECT {_DOC_COLS} FROM documents WHERE tenant_id=%s AND owner_id=%s AND sha256=%s",
                 (self._t, owner_id, sha256),
             ).fetchone()
-        return _doc(row) if row else None
+        return _doc(row, self._t) if row else None
 
     def get(self, owner_id: str, doc_id: str) -> Document | None:
         with self._pool.connection() as c:
@@ -82,7 +86,7 @@ class PostgresRegistry:
                 f"SELECT {_DOC_COLS} FROM documents WHERE tenant_id=%s AND owner_id=%s AND doc_id=%s",
                 (self._t, owner_id, doc_id),
             ).fetchone()
-        return _doc(row) if row else None
+        return _doc(row, self._t) if row else None
 
     def list_by_owner(self, owner_id: str) -> list[Document]:
         with self._pool.connection() as c:
@@ -91,7 +95,7 @@ class PostgresRegistry:
                 "ORDER BY created_at, doc_id",
                 (self._t, owner_id),
             ).fetchall()
-        return [_doc(r) for r in rows]
+        return [_doc(r, self._t) for r in rows]
 
     def delete(self, owner_id: str, doc_id: str) -> bool:
         with self._pool.connection() as c:
@@ -143,6 +147,11 @@ class PostgresSessions:
         self.ttl = timedelta(hours=ttl_hours)
         self._last_purge = 0.0
         self.purge_expired()
+
+    def for_tenant(self, tenant_id: str) -> PostgresSessions:
+        v = copy.copy(self)  # shares the pool; no startup purge per request
+        v._t = tenant_id
+        return v
 
     def _maybe_purge(self) -> None:
         if time.monotonic() - self._last_purge >= PURGE_EVERY_S:
@@ -202,7 +211,7 @@ class PostgresSessions:
             ).fetchall()
         msgs = [
             SessionMessage(
-                role=r[0], content=r[1], created_at=r[3],
+                tenant_id=self._t, role=r[0], content=r[1], created_at=r[3],
                 citation_ids=json.loads(r[2]) if isinstance(r[2], str) else list(r[2]),
             )
             for r in rows

@@ -1,7 +1,9 @@
 """FastAPI dependencies: bearer auth (ADR-0003 section 5) and app-wide services (ADR-0002 section 1).
 
-`current_user` returns the owner id; routers never read headers themselves. Tests use
-`app.dependency_overrides[current_user]` and may override the service getters.
+`current_user` returns the owner id and `current_tenant` the tenant id, both from the verified
+credential only (never body/query/other headers). Service getters return tenant-bound views.
+Routers never read headers themselves. Tests use
+`app.dependency_overrides[current_principal]` and may override the service getters.
 """
 
 from typing import Annotated, NewType
@@ -29,8 +31,7 @@ from ..store.spend import SqliteSpend
 from ..vectorstore.sync import SyncVectors
 
 UserId = NewType("UserId", str)
-
-
+TenantId = NewType("TenantId", str)
 
 class ApiError(HTTPException):
     """HTTPException carrying a machine-readable `code` for the {detail, code} body."""
@@ -80,32 +81,42 @@ def current_principal(
 
 
 def current_user(principal: Annotated[Principal, Depends(current_principal)]) -> UserId:
-    # Tenant scoping of data arrives with the tenancy tickets; owner id is the isolation key now.
     return UserId(principal.owner_id)
 
 
-def get_registry(request: Request) -> Registry:
-    return request.app.state.registry
+def current_tenant(principal: Annotated[Principal, Depends(current_principal)]) -> TenantId:
+    """Tenant of the verified credential. API-key owner ids (X-On-Behalf-Of) live inside this
+    tenant only: every store below is filtered by (tenant, owner), so another tenant's owner id
+    resolves to nothing (404)."""
+    return TenantId(principal.tenant_id)
 
 
-def get_store(request: Request) -> SyncVectors:
-    return request.app.state.store
+CurrentTenant = Annotated[TenantId, Depends(current_tenant)]
 
 
-def get_parents(request: Request) -> SqliteParents:
-    return request.app.state.parents
+def get_registry(request: Request, tenant: CurrentTenant) -> Registry:
+    return request.app.state.registry.for_tenant(tenant)
 
 
-def get_bm25(request: Request) -> Bm25Store | None:
-    return getattr(request.app.state, "bm25", None)
+def get_store(request: Request, tenant: CurrentTenant) -> SyncVectors:
+    return request.app.state.store.for_tenant(tenant)
 
 
-def get_sessions(request: Request) -> SqliteSessions:
-    return request.app.state.sessions
+def get_parents(request: Request, tenant: CurrentTenant) -> SqliteParents:
+    return request.app.state.parents.for_tenant(tenant)
 
 
-def get_ingestion(request: Request) -> IngestionService:
-    return request.app.state.ingestion
+def get_bm25(request: Request, tenant: CurrentTenant) -> Bm25Store | None:
+    b = getattr(request.app.state, "bm25", None)
+    return b.for_tenant(tenant) if b is not None else None
+
+
+def get_sessions(request: Request, tenant: CurrentTenant) -> SqliteSessions:
+    return request.app.state.sessions.for_tenant(tenant)
+
+
+def get_ingestion(request: Request, tenant: CurrentTenant) -> IngestionService:
+    return request.app.state.ingestion.for_tenant(tenant)
 
 
 CurrentUser = Annotated[UserId, Depends(current_user)]
@@ -146,7 +157,8 @@ def get_ledger(request: Request) -> SpendLedger:
     if getattr(st, "ledger", None) is None:
         s = get_settings()
         st.ledger = SpendLedger(
-            SqliteSpend(s.db_path), s.daily_usd_cap, global_cap_usd=s.global_daily_usd_cap
+            SqliteSpend(s.db_path), s.daily_usd_cap, global_cap_usd=s.global_daily_usd_cap,
+            tenant_cap_usd=s.tenant_daily_usd_cap,
         )
     return st.ledger
 
@@ -156,8 +168,11 @@ class Guard:
     LLM call or stream) checks the daily caps and reserves the run's max USD; `finish(usd)`
     settles it (no-op if never acquired, idempotent)."""
 
-    def __init__(self, ledger: SpendLedger, user: str, amount: float, headers: dict[str, str]):
-        self._ledger, self._user, self._amount = ledger, user, amount
+    def __init__(
+        self, ledger: SpendLedger, user: str, amount: float, headers: dict[str, str],
+        tenant: str | None = None,
+    ):
+        self._ledger, self._user, self._amount, self._tenant = ledger, user, amount, tenant
         self.headers = headers
         self.lease: Lease | None = None
 
@@ -165,10 +180,16 @@ class Guard:
         if self.lease is not None:
             return
         try:
-            self.lease = self._ledger.acquire(self._user, self._amount)
+            self.lease = self._ledger.acquire(self._user, self._amount, self._tenant)
         except SpendCapError as e:
-            code = "global_spend_cap_exceeded" if e.scope == "global" else "spend_cap_exceeded"
-            raise ApiError(429, code, "Daily spend cap reached", self.headers) from None
+            code = {"global": "global_spend_cap_exceeded", "tenant": "tenant_spend_cap_exceeded"}.get(
+                e.scope, "spend_cap_exceeded"
+            )
+            msg = (
+                "Daily spend cap for your organization reached; try again after 00:00 UTC"
+                if e.scope == "tenant" else "Daily spend cap reached"
+            )
+            raise ApiError(429, code, msg, self.headers) from None
 
     def finish(self, usd: float = 0.0) -> None:
         if self.lease is not None:
@@ -182,12 +203,12 @@ def llm_guard(max_usd_setting: str):
     """
 
     def dep(
-        response: Response, user: CurrentUser,
+        response: Response, user: CurrentUser, tenant: CurrentTenant,
         limiter: Annotated[RateLimiter, Depends(get_limiter)],
         glimiter: Annotated[RateLimiter, Depends(get_global_limiter)],
         ledger: Annotated[SpendLedger, Depends(get_ledger)],
     ) -> Guard:
-        d = limiter.hit(user)
+        d = limiter.hit(f"{tenant}:{user}")  # same owner id in two tenants = two buckets
         hdrs = d.headers()
         if not d.allowed:
             raise ApiError(429, "rate_limited", "Too many requests; retry later", hdrs)
@@ -199,7 +220,7 @@ def llm_guard(max_usd_setting: str):
             )
         for k, v in hdrs.items():
             response.headers[k] = v
-        return Guard(ledger, user, float(getattr(get_settings(), max_usd_setting)), hdrs)
+        return Guard(ledger, user, float(getattr(get_settings(), max_usd_setting)), hdrs, tenant)
 
     return dep
 

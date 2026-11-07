@@ -8,6 +8,7 @@ from typing import Any, Protocol, runtime_checkable
 from pydantic import BaseModel, Field
 
 EMBEDDING_DIM = 384
+DEFAULT_TENANT = "default"  # legacy/single-tenant namespace; real tenants come from credentials
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 # Chunk ids are "<doc>:<parent>:<n>" style (app/services/chunking.py); only ever bound as parameters.
 _CHUNK_ID_RE = re.compile(r"^[A-Za-z0-9_:.-]{1,128}$")
@@ -25,6 +26,7 @@ class ScoredChunk(BaseModel):
     text: str
     metadata: dict[str, Any] = Field(default_factory=dict)
     score: float  # cosine similarity, higher is better
+    tenant_id: str = DEFAULT_TENANT
 
 
 def check_id(name: str, value: str) -> str:

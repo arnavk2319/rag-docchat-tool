@@ -45,6 +45,7 @@ class InMemoryVectorStore:
             scored.append(
                 ScoredChunk(
                     chunk_id=rec.chunk_id,
+                    tenant_id=tenant_id,
                     doc_id=d,
                     text=rec.text,
                     metadata=dict(rec.metadata),
@@ -77,7 +78,7 @@ class InMemoryVectorStore:
         check_id("owner_id", owner_id)
         out = [
             ScoredChunk(
-                chunk_id=rec.chunk_id, doc_id=d, text=rec.text,
+                chunk_id=rec.chunk_id, doc_id=d, text=rec.text, tenant_id=tenant_id,
                 metadata=dict(rec.metadata), score=0.0,
             )
             for (t, o, d, _), (rec, _v) in self._rows.items()

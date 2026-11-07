@@ -47,9 +47,10 @@ def test_valid_user_id_chars_and_max_len(client):
 
 
 def test_dependency_override_replaces_auth(client):
-    from app.api.deps import current_user
+    from app.api.deps import current_principal
+    from app.core.auth import Principal
 
-    app.dependency_overrides[current_user] = lambda: "carol"
+    app.dependency_overrides[current_principal] = lambda: Principal("default", "carol")
     try:
         assert client.get("/v1/documents").status_code == 200
     finally:

@@ -7,6 +7,7 @@ Every method is owner-scoped: a foreign owner sees None / [] / False.
 
 from __future__ import annotations
 
+import copy
 import sqlite3
 import threading
 import uuid
@@ -18,6 +19,7 @@ from typing import Literal, Protocol, get_args
 from pydantic import BaseModel, Field
 
 from app.store.sqlite import connect, init_db
+from app.vectorstore.base import DEFAULT_TENANT
 
 Status = Literal["pending", "processing", "ready", "failed"]
 _STATUSES = frozenset(get_args(Status))
@@ -59,6 +61,7 @@ _COLS = _INSERT_COLS + ", failure_reason"
 
 class Document(BaseModel):
     doc_id: str
+    tenant_id: str = DEFAULT_TENANT
     owner_id: str = Field(min_length=1)
     filename: str
     mime: str
@@ -98,6 +101,7 @@ class Registry(Protocol):
     def update_status(self, owner_id: str, doc_id: str, status: Status) -> bool: ...
     def update_pages_or_sheets(self, owner_id: str, doc_id: str, n: int) -> bool: ...
     def set_failure_reason(self, owner_id: str, doc_id: str, reason: str | None) -> bool: ...
+    def for_tenant(self, tenant_id: str) -> Registry: ...
 
 
 class SqliteRegistry:
@@ -110,6 +114,10 @@ class SqliteRegistry:
         init_db(self._path, _SCHEMA)
         with self._conn() as c:
             _migrate(c)
+
+    def for_tenant(self, tenant_id: str) -> SqliteRegistry:
+        """Legacy single-tenant store (tests/dev only): not tenant-aware, returns itself."""
+        return self
 
     @property
     def db_path(self) -> Path:
@@ -260,8 +268,15 @@ class InMemoryRegistry:
     """Dict-backed Registry (same contract as SqliteRegistry); used by unit tests."""
 
     def __init__(self) -> None:
-        self._docs: dict[str, Document] = {}
+        self._docs: dict[str, Document] = {}  # shared by all tenant views
         self._lock = threading.Lock()
+        self._t = DEFAULT_TENANT
+
+    def for_tenant(self, tenant_id: str) -> InMemoryRegistry:
+        """View over the same storage; every method only sees this tenant's documents."""
+        v = copy.copy(self)
+        v._t = tenant_id
+        return v
 
     def create(
         self, owner_id, filename, mime, size, sha256, pages_or_sheets=0, status="pending"
@@ -274,13 +289,13 @@ class InMemoryRegistry:
         self, owner_id, filename, mime, size, sha256, pages_or_sheets=0, status="pending"
     ) -> tuple[Document, bool]:
         doc = Document(
-            doc_id=uuid.uuid4().hex, owner_id=owner_id, filename=filename, mime=mime, size=size,
-            sha256=sha256, pages_or_sheets=pages_or_sheets, created_at=datetime.now(UTC),
-            status=status,
+            doc_id=uuid.uuid4().hex, tenant_id=self._t, owner_id=owner_id, filename=filename,
+            mime=mime, size=size, sha256=sha256, pages_or_sheets=pages_or_sheets,
+            created_at=datetime.now(UTC), status=status,
         )
         with self._lock:
             for d in self._docs.values():
-                if d.owner_id == owner_id and d.sha256 == sha256:
+                if d.tenant_id == self._t and d.owner_id == owner_id and d.sha256 == sha256:
                     return d.model_copy(), False
             self._docs[doc.doc_id] = doc
         return doc.model_copy(), True
@@ -288,32 +303,35 @@ class InMemoryRegistry:
     def get_by_sha256(self, owner_id: str, sha256: str) -> Document | None:
         with self._lock:
             for d in self._docs.values():
-                if d.owner_id == owner_id and d.sha256 == sha256:
+                if d.tenant_id == self._t and d.owner_id == owner_id and d.sha256 == sha256:
                     return d.model_copy()
         return None
 
     def get(self, owner_id: str, doc_id: str) -> Document | None:
         with self._lock:
             d = self._docs.get(doc_id)
-            return d.model_copy() if d and d.owner_id == owner_id else None
+            return d.model_copy() if d and self._mine(d, owner_id) else None
 
     def list_by_owner(self, owner_id: str) -> list[Document]:
         with self._lock:
-            docs = [d.model_copy() for d in self._docs.values() if d.owner_id == owner_id]
+            docs = [d.model_copy() for d in self._docs.values() if self._mine(d, owner_id)]
         return sorted(docs, key=lambda d: (d.created_at, d.doc_id))
 
     def delete(self, owner_id: str, doc_id: str) -> bool:
         with self._lock:
             d = self._docs.get(doc_id)
-            if d is None or d.owner_id != owner_id:
+            if d is None or not self._mine(d, owner_id):
                 return False
             del self._docs[doc_id]
             return True
 
+    def _mine(self, d: Document, owner_id: str) -> bool:
+        return d.tenant_id == self._t and d.owner_id == owner_id
+
     def _update(self, owner_id: str, doc_id: str, **fields) -> bool:
         with self._lock:
             d = self._docs.get(doc_id)
-            if d is None or d.owner_id != owner_id:
+            if d is None or not self._mine(d, owner_id):
                 return False
             self._docs[doc_id] = d.model_copy(update=fields)
             return True

@@ -102,6 +102,7 @@ class PgVectorStore:
             out.append(
                 ScoredChunk(
                     chunk_id=chunk_id,
+                    tenant_id=tenant_id,
                     doc_id=d,
                     text=text,
                     metadata=meta or {},
@@ -131,7 +132,10 @@ class PgVectorStore:
             if isinstance(meta, str):
                 meta = json.loads(meta)
             out.append(
-                ScoredChunk(chunk_id=chunk_id, doc_id=d, text=text, metadata=meta or {}, score=0.0)
+                ScoredChunk(
+                    chunk_id=chunk_id, doc_id=d, text=text, metadata=meta or {}, score=0.0,
+                    tenant_id=params[0],
+                )
             )
         return out
 

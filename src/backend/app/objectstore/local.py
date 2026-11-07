@@ -7,7 +7,7 @@ import contextlib
 import os
 from pathlib import Path
 
-from .base import validate_key
+from .base import ObjectStoreError, validate_key
 
 
 class LocalObjectStore:
@@ -17,8 +17,6 @@ class LocalObjectStore:
     def _path(self, tenant_id: str, key: str) -> Path:
         p = self._root.joinpath(*validate_key(tenant_id, key)).resolve()
         if not p.is_relative_to(self._root):  # defence in depth (symlinks)
-            from .base import ObjectStoreError
-
             raise ObjectStoreError("key escapes store root")
         return p
 

@@ -182,7 +182,7 @@ def test_daily_cap_blocks_before_llm_call(monkeypatch):
         did = doc(c)
         r = c.post("/v1/query", json={"question": "sky?"}, headers=A)
         assert r.status_code == 200
-        spent = c.app.state.ledger._store.spent("alice", datetime.now(UTC).strftime("%Y-%m-%d"))
+        spent = c.app.state.ledger._store.spent("default:alice", datetime.now(UTC).strftime("%Y-%m-%d"))
         assert spent > 0  # recorded from actual usage
         calls = []
         real = llm.complete
@@ -209,7 +209,7 @@ def test_stream_records_spend_and_releases(monkeypatch):
         r = c.post("/v1/query", json={"question": "sky?", "stream": True}, headers=A)
         assert r.status_code == 200 and '"usd":0.0}' not in r.text
         day = datetime.now(UTC).strftime("%Y-%m-%d")
-        assert c.app.state.ledger._store.spent("alice", day) > 0
+        assert c.app.state.ledger._store.spent("default:alice", day) > 0
         assert c.app.state.ledger.reserved("alice") == 0
 
 
@@ -315,7 +315,7 @@ def test_llm_failures_release_lease_uncharged(monkeypatch):
         J(llm.LLMTransportError(400, "x"))
         assert c.post("/v1/summarize", json={"doc_id": did}, headers=A).status_code == 502
         assert reserved(c, "alice") == 0 and reserved(c, "*") == 0
-        assert c.app.state.ledger._store.spent("alice", day) == 0
+        assert c.app.state.ledger._store.spent("default:alice", day) == 0
 
 
 def test_429_headers_on_stream_and_summarize(monkeypatch):
