@@ -141,10 +141,7 @@ async def test_log_has_metrics_not_text(caplog):
     assert hasattr(rec, "usd") and rec.model == "claude-haiku-5-5"
 
 
-async def test_unknown_and_ollama_providers(monkeypatch):
-    monkeypatch.setenv("LLM_PROVIDER", "ollama")
-    with pytest.raises(NotImplementedError, match="T-018"):
-        await complete(MSG, model_role="fast")
+async def test_unknown_provider(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "bogus")
     llm.get_settings.cache_clear()
     with pytest.raises(ValueError):

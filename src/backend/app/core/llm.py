@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 import anthropic
+import httpx
 from pydantic import BaseModel, ValidationError
 
 from .config import Settings, get_settings
@@ -164,10 +165,64 @@ async def _call_hosted(
     return text, resp.usage.input_tokens, resp.usage.output_tokens
 
 
-async def _call_ollama(*_: Any, **__: Any) -> tuple[str, int, int]:
-    raise NotImplementedError(
-        "Ollama provider is not implemented yet (planned in T-018)"
-    )
+# Tests set this to an httpx.MockTransport; None = real network.
+_ollama_transport: httpx.AsyncBaseTransport | None = None
+
+
+async def _call_ollama(
+    s: Settings,
+    messages: list[Message],
+    model: str,
+    schema: type[BaseModel] | None,
+    max_tokens: int,
+    timeout: float,
+) -> tuple[str, int, int]:
+    body: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "stream": False,
+        "options": {"num_predict": max_tokens},
+    }
+    if schema is not None:
+        body["format"] = schema.model_json_schema()
+    url = s.ollama_base_url.rstrip("/") + "/api/chat"
+    try:
+        async with httpx.AsyncClient(
+            timeout=timeout, transport=_ollama_transport
+        ) as client:
+            resp = await client.post(url, json=body)
+    except (httpx.TimeoutException, httpx.TransportError) as e:
+        raise LLMTransportError(None, type(e).__name__) from e
+    if resp.status_code == 404:
+        raise LLMTransportError(
+            404, f"ollama model {model!r} not found; try `ollama pull {model}`"
+        )
+    if resp.status_code >= 400:
+        raise LLMTransportError(resp.status_code, "ollama")
+    try:
+        data = resp.json()
+        content = data["message"]["content"]
+        text = "" if content is None else str(content)
+        return (
+            text,
+            int(data.get("prompt_eval_count") or 0),
+            int(data.get("eval_count") or 0),
+        )
+    except (ValueError, KeyError, TypeError) as e:
+        raise LLMTransportError(502, "ollama malformed response") from e
+
+
+PROVIDERS = ("anthropic", "ollama", "mock")
+
+
+def validate_provider(s: Settings | None = None) -> str:
+    """Fail clearly on an unknown LLM_PROVIDER (call from the FastAPI lifespan)."""
+    p = (s or get_settings()).llm_provider
+    if p not in PROVIDERS:
+        raise ValueError(
+            f"unknown LLM_PROVIDER {p!r}; expected one of {', '.join(PROVIDERS)}"
+        )
+    return p
 
 
 async def _sleep(seconds: float) -> None:  # patched by tests (fake clock)
@@ -187,14 +242,12 @@ async def _attempt(
     max_tokens: int,
     timeout: float,
 ) -> tuple[str, int, int]:
-    provider = s.llm_provider
+    provider = validate_provider(s)
     if provider == "mock":
         return await _call_mock(messages, model, schema)
     if provider == "ollama":
-        return await _call_ollama()
-    if provider == "anthropic":
-        return await _call_hosted(s, messages, model, max_tokens, timeout)
-    raise ValueError(f"unknown LLM_PROVIDER {provider!r}")
+        return await _call_ollama(s, messages, model, schema, max_tokens, timeout)
+    return await _call_hosted(s, messages, model, max_tokens, timeout)
 
 
 async def _call_with_retry(
@@ -235,7 +288,11 @@ async def complete[T: BaseModel](
     run_id: str | None = None,
 ) -> LLMResult:
     s = get_settings()
-    model = {"agent": s.agent_model, "fast": s.fast_model}[model_role]
+    validate_provider(s)
+    if s.llm_provider == "ollama":
+        model = {"agent": s.ollama_agent_model, "fast": s.ollama_fast_model}[model_role]
+    else:
+        model = {"agent": s.agent_model, "fast": s.fast_model}[model_role]
     if timeout is None:
         timeout = s.llm_timeout_s
     elif timeout <= 0:

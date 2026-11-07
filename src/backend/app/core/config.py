@@ -18,12 +18,12 @@ class Settings(BaseSettings):
     api_key: SecretStr = Field(
         default=SecretStr(""), validation_alias="ANTHROPIC_API_KEY"
     )
-    llm_provider: str = (
-        "mock"  # validated by core.llm (Anthropic | ollama | mock)
-    )
+    llm_provider: str = "mock"  # validated by core.llm (Anthropic | ollama | mock)
     agent_model: str = "claude-sonnet-5-5"
     fast_model: str = "claude-haiku-5-5"
     ollama_base_url: str = "http://localhost:11434"
+    ollama_agent_model: str = "llama3.1:8b"  # env OLLAMA_AGENT_MODEL
+    ollama_fast_model: str = "llama3.2:3b"  # env OLLAMA_FAST_MODEL
     chroma_dir: str = "chroma_db"
     db_path: str = "data/docchat.db"
     embed_model: str = "sentence-transformers/all-MiniLM-L6-v2"

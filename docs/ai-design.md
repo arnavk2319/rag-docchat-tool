@@ -2,7 +2,7 @@
 
 | Decision | Choice | Why (one line) | Cost impact |
 | -------- | ------ | -------------- | ----------- |
-| Generation model | Hosted `claude-sonnet-5-5` (agent/answer), `claude-haiku-5-5` (map/grade/compress/groundedness); Ollama optional; ids in config only | Best tool calling; cheap tier for sub-steps | <= $0.05/agent request, <= $0.02/20-page summary; tests $0 (mock) |
+| Generation model | Hosted `claude-sonnet-5-5` (agent/answer), `claude-haiku-5-5` (map/grade/compress/groundedness); Ollama optional (T-018; best-effort for tool calling, small local models are unreliable at it); ids in config only | Best tool calling; cheap tier for sub-steps | <= $0.05/agent request, <= $0.02/20-page summary; tests $0 (mock) |
 | Embedding model | `all-MiniLM-L6-v2` via sentence-transformers, local, loaded once by the registry (`core/models.py`, id from `EMBED_MODEL`) | Free, fast on CPU, good enough for recall@5 >= 0.8 | $0 API; ~0.1 GB RAM |
 | Vector store | Embedded Chroma PersistentClient + `rank-bm25` index | No server, metadata filter by doc_id/owner | $0; single-process only |
 | Chunking | Parent-child: child ~300 tok embedded, parent ~1200 tok as context; page/sheet/section + char offsets | Precise match, rich context, exact citation spans | $0; slightly larger index |
