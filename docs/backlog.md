@@ -25,7 +25,7 @@ Parallel after T-001: T-002, T-003, T-005. After those: T-004 and T-006 chain; T
 | T-004 | P0 | Model registry in lifespan + threadpool | M | T-002, T-003 | done |
 | T-005 | P0 | SQLite document registry | S | T-001 | done |
 | T-006 | P0 | Ingestion + embedded Chroma with doc_id metadata | M | T-004, T-005 | done |
-| T-007 | P0 | Five endpoints (needs_architect) | M | T-002, T-006 | approved |
+| T-007 | P0 | Five endpoints (needs_architect) | M | T-002, T-006 | done |
 | T-008 | P0 | Upload validation hardening | S | T-007 | approved |
 | T-009 | P1 | Parent-child chunking | M | T-006 | done |
 | T-010 | P1 | Hybrid BM25 + dense RRF | M | T-009 | approved |
@@ -57,3 +57,5 @@ Estimated total: 18 M x $4 + 5 S x $1.50 = $79.50 (caps, not expected spend).
 - Rotate the exposed `.env` OpenAI key (human task)
 - Reverse-proxy request body-size limit (Starlette spools multipart bodies before our 10 MB streaming cap runs); part of the environments/deploy phase.
 - PDF safety checks (encrypted, embedded JavaScript/files) using pypdf, if wanted; the unused PyPDF2/VirusTotal prototype is deleted in T-004.
+- Streaming request-body guard (ASGI middleware) so the 50 MB total and 10-file limits are enforced before Starlette spools the multipart body, including chunked requests (reviewer note on T-007; same root cause as the proxy body-size item).
+- Move GET /v1/documents pagination into SQL LIMIT/OFFSET instead of slicing in memory.
