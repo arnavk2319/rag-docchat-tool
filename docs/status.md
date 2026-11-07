@@ -1,28 +1,24 @@
 # Status (rolling, max 60 lines; orchestrator rewrites after every stage)
 
-Updated: 2026-11-07 · Mode: autopilot · Phase: P4 in progress (P0-P3 done; T-020 + T-021 building, T-022 + T-023 pending)
+Updated: 2026-11-07 · Mode: autopilot · Phase: ALL 23 TICKETS DONE on dev · security audit done · AT GATE B (human)
 
 ## Decisions made
 - Spec (docs/spec.md): P0-P4 backend only. Later items in docs/backlog.md.
-- ADR-0001/0002 still "proposed": review at Gate B. Integration branch `dev`; tickets squash-merge directly, NO PRs (CLAUDE.md override).
-- No Anthropic key; build and all tests run on LLM_PROVIDER=mock. No paid API is called by agents.
+- ADR-0001/0002 still "proposed": review at Gate B. Integration branch `dev`; tickets squash-merged directly, NO PRs (CLAUDE.md override).
+- No Anthropic key; build and all tests ran on LLM_PROVIDER=mock. No paid API was called by agents.
 - Use `node --experimental-strip-types scripts/agentic/*.ts` (plain `node` fails on Node 22).
+- MAX_REWRITES default is 1 (was 2): out-of-corpus questions burned ~11 steps for no gain.
 
 ## Progress
-- Done on dev (831 tests): T-001..T-019 (P0 foundation + 8 endpoints, P1 hybrid retrieval/rerank/citations/summaries,
-  P2 six agent tools, P3 LangGraph agent core + grade/rewrite/groundedness + SSE on POST /v1/query).
-- In flight: T-020 per-session memory, T-021 prompt-injection defences (worktrees/t-020-*, t-021-*).
-- Next: T-022 rate limit + spend cap + PII-safe logs (after T-020/T-021 merge: shares api/query.py), then T-023 golden set + evals, then security-auditor, then GATE B.
-
-## Budget
-- Day cap raised by the human to $45 in .claude/budgets.json; guard-budget passes. No exact spend figure tracked here.
+- Done on dev (944 tests, ruff clean): T-001..T-023. Last commit 6ac2220.
+- Evals (mock only, labelled so): recall@5 0.786 (<0.8), citation_correct 0.765 (<0.9), task_success 0.75 (<0.8) MISS; MRR, faithfulness, relevance, steps 7.75, injection 1.0 pass. `uv run python -m evals.run --mock --check` exits 1. Causes traced to the lexical FAKE reranker / toy answerer; needs a live eval. Do not add the CI step until resolved or waived.
+- Security audit: docs/security-audit.md. Fine for local/demo; NOT for internet exposure (B-1 X-User-Id trust-the-header auth, H-1..H-5).
 
 ## Open (human)
-- .env.example (agents cannot touch it): MIN_RERANK_SCORE=0.0, MAX_UPLOAD_MB (can only lower the 10 MB cap),
-  SUMMARY_MAX_USD, SUMMARY_REDUCE_ROLE, SUMMARY_COMPRESS, SUMMARY_BATCH_CHARS, SUMMARY_MAX_BATCHES; check
-  AGENT_MAX_STEPS (code default is now 16; a stale value of 6 in .env.example would override it);
-  optional AGENT_MAX_TOKENS env var (currently a code constant 30000).
-- REQUIRED before the agent is useful on tables: originals are not persisted, so query_table's table_loader is unwired and returns not found. Needs a ticket (persist owner-scoped originals + loader).
-- Live LLM later: ANTHROPIC_API_KEY in .env (or Ollama). T-023 evals run on scripted mock answers until then; MIN_RERANK_SCORE and grader accuracy need calibration on real models.
-- Git history still holds the personal citizenship documents (Later).
-- Uncommitted human edits in the main tree: .env.example, .claude/budgets.json, .claude/settings.json.
+- GATE B: review/merge dev -> main (see final report for the command). Never merged by agents.
+- .env.example (agents cannot touch it): MIN_RERANK_SCORE=0.0, MAX_UPLOAD_MB, SUMMARY_MAX_USD, SUMMARY_REDUCE_ROLE, SUMMARY_COMPRESS, SUMMARY_BATCH_CHARS, SUMMARY_MAX_BATCHES, SESSION_MAX_MESSAGES=20, SESSION_MAX_TOKENS=2000, SESSION_TTL_HOURS=24, RATE_LIMIT_PER_MIN=30, DAILY_USD_CAP=1.0 (must be >0), GLOBAL_DAILY_USD_CAP=5.0, GLOBAL_RATE_LIMIT_PER_MIN=120, SESSION_MAX_PER_OWNER=100; check AGENT_MAX_STEPS (code default 16; a stale 6 would override); optional AGENT_MAX_TOKENS (code constant 30000).
+- Before production: real auth, upload quotas/body limits, parse sandbox/timeouts, CORS+security headers, docs off, pip-audit (audit file).
+- query_table is unusable in production: originals are not persisted, table_loader unwired (needs a ticket).
+- .gitignore (human): add data/, chroma_db*/, *.db. Rotate the exposed OpenAI key.
+- Personal documents still tracked in git and history: src/documents/ (hotel reservation PDF, travel checklist). Rewrite is a human decision.
+- Live LLM later: ANTHROPIC_API_KEY or Ollama; calibrate MIN_RERANK_SCORE and grader accuracy on real models.
