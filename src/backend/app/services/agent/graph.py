@@ -19,6 +19,7 @@ from langgraph.graph import END, START, StateGraph
 
 from ...core import llm
 from ...core.config import get_settings
+from ..sessions import history_block
 from . import nodes
 from .nodes import AgentState, Deps
 from .tools import ToolContext
@@ -130,6 +131,7 @@ async def run_agent(
     run_id: str | None = None,
     on_event: Callable[[str, dict[str, Any]], None] | None = None,
     cancel: threading.Event | None = None,
+    history: list[dict[str, str]] | None = None,
 ) -> AgentResult:
     s = get_settings()
     max_steps = max_steps or s.agent_max_steps
@@ -143,6 +145,8 @@ async def run_agent(
     d = Deps(ctx=ctx, budget=budget, run_id=run_id or uuid.uuid4().hex[:12], emit=on_event)
     graph = build_graph(d, verify)
     last: AgentState = {"question": question[:MAX_QUESTION_CHARS], "steps": 0, "history": []}
+    if history:
+        last["convo"] = history_block(history)
     stop = ""
     try:
         async for snap in graph.astream(

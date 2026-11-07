@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     summary_batch_chars: int = Field(default=8000, gt=0)  # env SUMMARY_BATCH_CHARS
     summary_max_batches: int = Field(default=40, gt=0)  # env SUMMARY_MAX_BATCHES
 
+    session_max_messages: int = Field(default=20, ge=2, le=200)  # env SESSION_MAX_MESSAGES (10 turns)
+    session_max_tokens: int = Field(default=2000, ge=100)  # env SESSION_MAX_TOKENS
+    session_ttl_hours: float = Field(default=24.0, gt=0)  # env SESSION_TTL_HOURS (idle)
+
     # Non-env: price table (USD per 1M tokens) and transport defaults.
     prices: dict[str, tuple[float, float]] = Field(
         default_factory=lambda: dict(DEFAULT_PRICES)

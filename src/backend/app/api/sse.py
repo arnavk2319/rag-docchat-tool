@@ -16,7 +16,7 @@ import re
 import threading
 import time
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Any
 
 from fastapi import Request
@@ -127,6 +127,10 @@ async def stream_agent(
     question: str,
     ctx: ToolContext,
     names: dict[str, str],
+    *,
+    history: list[dict[str, str]] | None = None,
+    session_id: str | None = None,
+    on_complete: Callable[[str, list[str]], Awaitable[None]] | None = None,
 ) -> AsyncIterator[str]:
     """Yield SSE frames. `names` = caller's ready docs (doc_id -> filename); empty = no run."""
     run_id = uuid.uuid4().hex[:12]
@@ -142,6 +146,7 @@ async def stream_agent(
         return ev("final", {
             "answer": answer, "citations": cites, "abstained": answer.strip() == IDK,
             "stopped_reason": stopped, "usage": usage,
+            **({"session_id": session_id} if session_id is not None else {}),
         })
 
     zero = {"steps": 0, "tokens": 0, "usd": 0.0}
@@ -159,6 +164,7 @@ async def stream_agent(
             return await run_agent(
                 question, ctx, run_id=run_id, on_event=lambda n, p: q.put_nowait((n, p)),
                 cancel=cancel,
+                history=history,
             )
         finally:
             q.put_nowait(("", {}))  # sentinel: wakes the consumer immediately
@@ -201,6 +207,11 @@ async def stream_agent(
         yield ev("citations", {"citations": cites})
         usage = {"steps": res.steps, "tokens": res.tokens, "usd": round(res.usd, 6)}
         stopped = stop_reason(res)
+        if stopped == "done" and on_complete is not None:
+            try:  # memory is best-effort: a store fault must not break a finished answer
+                await on_complete(res.answer, [c["doc_id"] for c in cites])
+            except Exception:
+                log.exception("session store failed", extra={"run_id": run_id})
         if stopped == "error":
             yield ev("error", {"code": "llm_unavailable", "detail": "The model could not produce a reply."})
         yield final(text, cites, stopped, usage)

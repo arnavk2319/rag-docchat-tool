@@ -67,7 +67,6 @@ class QueryRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     doc_ids: list[str] | None = Field(default=None, min_length=1, max_length=20)
     top_k: int = Field(default=5, ge=1, le=20)
-    # Accepted now, ignored until T-020 (sessions) / T-019 (SSE streaming).
     session_id: str | None = Field(default=None, max_length=64)
     stream: bool = False
 
@@ -104,3 +103,19 @@ class SummarizeResponse(BaseModel):
     summary: str
     doc_ids: list[str]
     partial: bool = False  # true when the USD cap or batch cap cut the summary short
+
+
+class SessionCreated(BaseModel):
+    session_id: str
+
+
+class SessionMessageOut(BaseModel):
+    role: str
+    content: str
+    citation_ids: list[str]
+    created_at: datetime
+
+
+class SessionOut(BaseModel):
+    session_id: str
+    messages: list[SessionMessageOut]

@@ -233,10 +233,10 @@ def test_query_no_documents_abstains_without_llm(client, monkeypatch):
     assert body["abstained"] is True and body["citations"] == []
 
 
-def test_query_session_accepted_and_ignored(client):
+def test_query_unknown_session_is_404(client):
     one(client)
     r = client.post("/v1/query", json={"question": "sky", "session_id": "s1"}, headers=A)
-    assert r.status_code == 200 and "answer" in r.json()
+    assert r.status_code == 404 and r.json()["code"] == "not_found"
 
 
 def test_json_body_limit(client):

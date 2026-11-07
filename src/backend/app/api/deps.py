@@ -15,6 +15,7 @@ from ..store.bm25 import Bm25Store
 from ..store.chroma import VectorStore
 from ..store.parents import SqliteParents
 from ..store.registry import Registry
+from ..store.sessions import SqliteSessions
 
 UserId = NewType("UserId", str)
 
@@ -54,6 +55,10 @@ def get_bm25(request: Request) -> Bm25Store | None:
     return getattr(request.app.state, "bm25", None)
 
 
+def get_sessions(request: Request) -> SqliteSessions:
+    return request.app.state.sessions
+
+
 def get_ingestion(request: Request) -> IngestionService:
     return request.app.state.ingestion
 
@@ -63,6 +68,7 @@ RegistryDep = Annotated[Registry, Depends(get_registry)]
 StoreDep = Annotated[VectorStore, Depends(get_store)]
 ParentsDep = Annotated[SqliteParents, Depends(get_parents)]
 Bm25Dep = Annotated[Bm25Store | None, Depends(get_bm25)]
+SessionsDep = Annotated[SqliteSessions, Depends(get_sessions)]
 IngestionDep = Annotated[IngestionService, Depends(get_ingestion)]
 
 

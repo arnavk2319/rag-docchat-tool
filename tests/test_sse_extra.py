@@ -67,7 +67,7 @@ def ctx():
 
 
 def fake_run(result: AgentResult, events=()):
-    async def run(question, c, run_id=None, on_event=None, cancel=None):
+    async def run(question, c, run_id=None, on_event=None, cancel=None, **kw):
         for n, p in events:
             on_event(n, p)
         await asyncio.sleep(0)
@@ -152,7 +152,7 @@ async def test_run_id_differs_across_runs_and_seq_from_one(monkeypatch):
 
 
 async def test_concurrent_streams_do_not_share_state(monkeypatch):
-    async def run(question, c, run_id=None, on_event=None, cancel=None):
+    async def run(question, c, run_id=None, on_event=None, cancel=None, **kw):
         on_event("step", {"node": "router", "n": 1})
         await asyncio.sleep(0.01)
         return AgentResult(answer=f"answer for {question}")
@@ -295,7 +295,7 @@ async def test_generator_close_cancels_task_no_leak(monkeypatch):
 
 
 async def test_heartbeat_is_comment_and_consumes_no_seq(monkeypatch):
-    async def run(question, c, run_id=None, on_event=None, cancel=None):
+    async def run(question, c, run_id=None, on_event=None, cancel=None, **kw):
         await asyncio.sleep(0.15)
         return AgentResult(answer="done")
 

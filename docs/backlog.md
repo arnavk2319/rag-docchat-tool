@@ -38,7 +38,7 @@ Parallel after T-001: T-002, T-003, T-005. After those: T-004 and T-006 chain; T
 | T-017 | P3 | Grade, rewrite, groundedness | M | T-016 | done |
 | T-018 | P3 | Ollama provider | S | T-002 | done |
 | T-019 | P3 | Agent SSE endpoint (needs_architect) | M | T-017 | done |
-| T-020 | P4 | Per-session memory (needs_architect) | M | T-019 | approved |
+| T-020 | P4 | Per-session memory (needs_architect) | M | T-019 | done |
 | T-021 | P4 | Prompt-injection defences | M | T-019 | approved |
 | T-022 | P4 | Rate limit, spend cap, PII-safe logs | M | T-019 | approved |
 | T-023 | P4 | Golden set + eval script (eval: evaluator) | M | T-020, T-021, T-022 | approved |

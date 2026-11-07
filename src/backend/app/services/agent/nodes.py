@@ -50,6 +50,7 @@ class AgentState(TypedDict, total=False):
     rewrite: str  # rewritten search query (LLM output: untrusted data)
     grade: str  # "relevant" | "irrelevant" | "abstain"
     regenerated: int  # answer regenerations used (<= MAX_REGENERATE)
+    convo: str  # pre-escaped <conversation> block of earlier session turns (data), or ""
 
 
 class RouterOut(BaseModel):
@@ -147,7 +148,7 @@ def _history_text(history: list[dict[str, str]]) -> str:
 
 
 def _q(state: AgentState) -> str:
-    return escape(state["question"])
+    return state.get("convo", "") + escape(state["question"])
 
 
 async def router(state: AgentState, d: Deps) -> AgentState:

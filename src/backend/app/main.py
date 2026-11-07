@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from starlette.exceptions import HTTPException
 
-from .api import documents, query, summarize
+from .api import documents, query, sessions, summarize
 from .api.errors import http_error, install_error_handlers
 from .core.concurrency import run_blocking
 from .core.config import get_settings
@@ -15,6 +15,7 @@ from .store.bm25 import Bm25Store
 from .store.chroma import ChromaStore
 from .store.parents import SqliteParents
 from .store.registry import SqliteRegistry
+from .store.sessions import SqliteSessions
 from .utilities.logging_module import logger
 
 tracemalloc.start()
@@ -42,6 +43,14 @@ async def lifespan(app: FastAPI):
         # Rebuilt from the persisted JSON token files at startup.
         state.bm25 = await run_blocking(Bm25Store, f"{settings.chroma_dir}_bm25")
         created.append("bm25")
+    if getattr(state, "sessions", None) is None:
+        state.sessions = await run_blocking(
+            lambda: SqliteSessions(
+                settings.db_path, max_messages=settings.session_max_messages,
+                max_tokens=settings.session_max_tokens, ttl_hours=settings.session_ttl_hours,
+            )  # also purges expired sessions at startup
+        )
+        created.append("sessions")
     if getattr(state, "ingestion", None) is None:
         state.ingestion = IngestionService(
             state.registry, state.store, parents=state.parents, bm25=state.bm25
@@ -60,6 +69,7 @@ app = FastAPI(lifespan=lifespan)
 app.include_router(documents.router)
 app.include_router(summarize.router)
 app.include_router(query.router)
+app.include_router(sessions.router)
 
 
 async def http_exception_handle_logging(request, exc: HTTPException):

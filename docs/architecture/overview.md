@@ -20,3 +20,5 @@ HTTP API (`api/`): routers `documents`, `summarize`, `query` under `/v1`, `deps.
 Agent tools (`services/agent/tools.py`, allow-listed, owner-scoped, escaped results): see [tools.md](tools.md).
 
 Agent flow over HTTP (T-019): `POST /v1/query` with `stream=true` -> auth and owner-scoped doc resolution (plain JSON errors) -> `api/sse.py` starts `run_agent` as a task with a per-run event hook -> router/plan/tool/grade/rewrite/answer/groundedness nodes emit `step`/`tool_call`/`tool_result` into a queue -> the generator sanitises, numbers (`seq`) and frames them, then emits `token`, `citations`, `final`. Client disconnect cancels the task. Event schema: [api.md](api.md).
+
+Sessions (T-020): explicit `/v1/sessions` endpoints and `store/sessions.py` give bounded, owner-scoped, TTL-limited chat memory that `/v1/query` (JSON and SSE) injects into prompts as escaped data. See [sessions.md](sessions.md).
