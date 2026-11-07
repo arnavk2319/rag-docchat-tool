@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import sqlite3
 import uuid
-from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal, Protocol, get_args
 
 from pydantic import BaseModel, Field
+
+from app.store.sqlite import connect, init_db
 
 Status = Literal["pending", "processing", "ready", "failed"]
 _STATUSES = frozenset(get_args(Status))
@@ -87,19 +88,14 @@ class SqliteRegistry:
 
             db_path = get_settings().db_path
         self._path = Path(db_path)
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        with self._conn() as c:
-            c.execute("PRAGMA journal_mode=WAL")
-            c.executescript(_SCHEMA)
+        init_db(self._path, _SCHEMA)
 
-    @contextmanager
-    def _conn(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self._path, timeout=30)
-        try:
-            with conn:  # commit or rollback
-                yield conn
-        finally:
-            conn.close()
+    @property
+    def db_path(self) -> Path:
+        return self._path
+
+    def _conn(self) -> AbstractContextManager[sqlite3.Connection]:
+        return connect(self._path)
 
     @staticmethod
     def _row(row: tuple) -> Document:

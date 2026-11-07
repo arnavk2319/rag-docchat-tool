@@ -2,9 +2,10 @@
 
 `services/ingestion.py` (`IngestionService`) + `store/chroma.py` (`VectorStore` protocol, `ChromaStore`).
 
-Flow: sha256 (run_blocking) -> `create_if_absent` -> status `processing` -> `parse_uploaded_file` (run_blocking) -> fixed-size chunks (1000 chars, 150 overlap) -> embed in batches of 32 (run_blocking) -> `VectorStore.add` -> `ready`.
+Flow: sha256 (run_blocking) -> `create_if_absent` -> status `processing` -> `parse_uploaded_file` (run_blocking) -> parent/child chunks (see chunking.md) -> parents saved to SQLite (`store/parents.py`) -> embed CHILDREN only in batches of 32 (run_blocking) -> `VectorStore.add` -> `ready`.
 
-- Chunk metadata: `doc_id`, `owner_id`, `chunk_id` (`<doc_id>:<n>`), `char_start`/`char_end` (offsets into that page/sheet's text), `source`, plus `page` (pdf) or `sheet` (csv/xlsx). docx/txt carry only `source` ("section 1"). Whitespace-only chunks are dropped.
+- Child chunk metadata (Chroma): `doc_id`, `owner_id`, `chunk_id` (`<doc_id>:<parent_n>:<child_n>`), `parent_id` (`<doc_id>:<parent_n>`), `section` (`''` if unknown, never None), `char_start`/`char_end` (offsets into that page/sheet's text), `source`, plus `page` (pdf) or `sheet` (csv/xlsx). docx/txt carry only `source` ("section 1"). Whitespace-only chunks are dropped.
+- Parents: table `parents` in the registry's SQLite file (DB_PATH), owner-scoped; replaced atomically on re-ingest; removed on delete and on failure/cancel purge. `services/parent_lookup.expand_to_parents` maps child hits to deduplicated parents (best-child order, best score).
 - Chroma: embedded `PersistentClient(CHROMA_DIR)`, collection `chunks`, cosine, `embedding_function=None` (vectors always passed explicitly; no model download), telemetry off. Query/delete/count always filter by `owner_id` (empty owner raises) and optionally `doc_id`.
 - Dedupe/retry policy on a (owner, sha256) hit: `ready` -> return as is, no parse/embed; `failed` -> purge vectors, re-ingest (failed -> processing); `pending`/`processing` not in flight in this process -> treated as stuck, purged, re-ingested; in flight -> returned unchanged (in-process set; app is single-process per ADR-0001).
 - Failure: partial vectors purged, status `failed`; only an exception class name / `parse_error` is logged, never text.
@@ -17,3 +18,5 @@ Flow: sha256 (run_blocking) -> `create_if_absent` -> status `processing` -> `par
 - Delete while the doc is mid-ingest raises `DocumentBusyError` (in-flight set); it succeeds once the ingest ends, leaving no orphan vectors.
 - Query clamps `n_results` to the owner's (and doc's) matching count, so a small owner next to a large one never errors or gets short results.
 - The embedded Chroma client is shared across `run_blocking` worker threads; single-process is the supported mode.
+- Legacy data: documents ingested before T-009 (T-006 format: ids `<doc>:<n>`, no `parent_id`, no parents rows) must be re-ingested. They degrade safely: `expand_to_parents` skips hits without `parent_id` or with no parent row, returning nothing and no errors.
+- SQLite access for the registry and parents shares `store/sqlite.py` (`connect`, `init_db`: WAL, 30 s timeout); `SqliteRegistry.db_path` is public and `IngestionService` builds `SqliteParents(registry.db_path)` unless a parents store is passed (non-SQLite registries must pass one).

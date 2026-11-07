@@ -147,21 +147,8 @@ async def test_event_loop_not_blocked(env):
     assert ticks >= 5
 
 
-def test_chunking_overlap_and_offsets():
-    text = "".join(chr(97 + i % 26) for i in range(2500))
-    cs = chunk_pages(
-        [fh.ParsedPage(text=text, source="section 1")], "d", "o", 1000, 100
-    )
-    assert [(c.metadata["char_start"], c.metadata["char_end"]) for c in cs] == [
-        (0, 1000),
-        (900, 1900),
-        (1800, 2500),
-    ]
-    for c in cs:
-        assert text[c.metadata["char_start"] : c.metadata["char_end"]] == c.text
-    assert chunk_pages([fh.ParsedPage(text="  \n", source="s")], "d", "o") == []
-    with pytest.raises(ValueError):
-        chunk_pages([], "d", "o", 10, 10)
+def test_chunking_whitespace_only_dropped():
+    assert chunk_pages([fh.ParsedPage(text="  \n", source="s")], "d", "o") == ([], [])
 
 
 async def test_large_input_batches(env, tmp_path):

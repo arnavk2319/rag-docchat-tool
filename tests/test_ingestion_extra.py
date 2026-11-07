@@ -39,37 +39,28 @@ def pg(text):
     return [fh.ParsedPage(text=text, source="section 1")]
 
 
-# ---- chunking ----
+# ---- chunking (parent-child, T-009; fixed-window tests replaced) ----
 def test_chunk_empty_and_short():
-    assert chunk_pages(pg(""), "d", "o") == []
-    assert chunk_pages([], "d", "o") == []
-    cs = chunk_pages(pg("hello"), "d", "o")
-    assert len(cs) == 1 and cs[0].text == "hello"
+    assert chunk_pages(pg(""), "d", "o") == ([], [])
+    assert chunk_pages([], "d", "o") == ([], [])
+    ps, cs = chunk_pages(pg("hello"), "d", "o")
+    assert len(ps) == 1 and len(cs) == 1 and cs[0].text == "hello"
+    assert cs[0].chunk_id == "d:0:0" and cs[0].metadata["parent_id"] == "d:0"
     assert (cs[0].metadata["char_start"], cs[0].metadata["char_end"]) == (0, 5)
-
-
-def test_chunk_exact_boundary():
-    cs = chunk_pages(pg("x" * 1000), "d", "o")
-    assert len(cs) == 1
-    cs = chunk_pages(pg("x" * 1001), "d", "o")
-    assert [(c.metadata["char_start"], c.metadata["char_end"]) for c in cs] == [
-        (0, 1000),
-        (850, 1001),
-    ]
+    assert cs[0].metadata["section"] == ""
 
 
 @pytest.mark.parametrize("text", ["héllo 😀 世界 " * 400, "a" * 5000, "ab\ncd " * 700])
 def test_chunk_offsets_reproduce_source(text):
-    cs = chunk_pages(pg(text), "d", "o", 300, 50)
+    _ps, cs = chunk_pages(pg(text), "d", "o")
     assert cs
     prev_end = 0
     for c in cs:
         s, e = c.metadata["char_start"], c.metadata["char_end"]
         assert 0 <= s < e <= len(text)
         assert text[s:e] == c.text
-        assert s <= prev_end  # overlap/contiguous, no gap
+        assert s >= prev_end  # ordered, no overlap
         prev_end = e
-    assert prev_end == len(text)
 
 
 def test_chunk_ids_unique_and_stable():
@@ -77,8 +68,8 @@ def test_chunk_ids_unique_and_stable():
         fh.ParsedPage(text="a" * 2500, source="page 1", page=1),
         fh.ParsedPage(text="b" * 2500, source="page 2", page=2),
     ]
-    a = chunk_pages(pages, "d", "o")
-    b = chunk_pages(pages, "d", "o")
+    a = chunk_pages(pages, "d", "o")[1]
+    b = chunk_pages(pages, "d", "o")[1]
     ids = [c.chunk_id for c in a]
     assert len(set(ids)) == len(ids) and ids == [c.chunk_id for c in b]
     assert {c.metadata["page"] for c in a} == {1, 2}

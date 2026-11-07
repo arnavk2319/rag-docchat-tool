@@ -1,4 +1,4 @@
-"""Ingestion: parse -> chunk -> embed -> store, with registry status transitions.
+"""Ingestion: parse -> parent/child chunk -> embed children -> store, with registry status transitions.
 
 Retry policy (dedupe hit on (owner_id, sha256)):
 - ready: return the existing doc; no parsing, no embedding.
@@ -20,14 +20,14 @@ import threading
 from typing import Any
 
 from app.core.concurrency import run_blocking
+from app.services.chunking import chunk_document
 from app.store.chroma import VectorStore
-from app.store.registry import Document, Registry
+from app.store.parents import Parent, SqliteParents
+from app.store.registry import Document, Registry, SqliteRegistry
 from app.utilities.file_handler import ParsedPage, ParseError, parse_uploaded_file
 
 log = logging.getLogger(__name__)
 
-CHUNK_CHARS = 1000
-CHUNK_OVERLAP = 150
 EMBED_BATCH = 32
 
 _inflight: set[str] = set()
@@ -57,40 +57,35 @@ def sha256_file(path: str) -> str:
     return h.hexdigest()
 
 
-def chunk_pages(
-    pages: list[ParsedPage],
-    doc_id: str,
-    owner_id: str,
-    size: int = CHUNK_CHARS,
-    overlap: int = CHUNK_OVERLAP,
-) -> list[Chunk]:
-    """Fixed-size windows with overlap; char_start/char_end index into each page's text."""
-    if size <= 0 or not 0 <= overlap < size:
-        raise ValueError("need size > 0 and 0 <= overlap < size")
-    out: list[Chunk] = []
-    for pg in pages:
-        text, start = pg.text, 0
-        while start < len(text):
-            end = min(start + size, len(text))
-            piece = text[start:end]
-            if piece.strip():
-                meta: dict[str, Any] = {
-                    "doc_id": doc_id,
-                    "owner_id": owner_id,
-                    "chunk_id": f"{doc_id}:{len(out)}",
-                    "char_start": start,
-                    "char_end": end,
-                    "source": pg.source,
-                }
-                if pg.page is not None:
-                    meta["page"] = pg.page
-                if pg.sheet is not None:
-                    meta["sheet"] = pg.sheet
-                out.append(Chunk(meta["chunk_id"], piece, meta))
-            if end == len(text):
-                break
-            start = end - overlap
-    return out
+def chunk_pages(pages: list[ParsedPage], doc_id: str, owner_id: str) -> tuple[list[Parent], list[Chunk]]:
+    """Parent-child split (see services/chunking.py). Returns (parents, embeddable children)."""
+    parents: list[Parent] = []
+    children: list[Chunk] = []
+    for p in chunk_document(pages, doc_id):
+        parents.append(
+            Parent(
+                owner_id=owner_id, doc_id=doc_id, parent_id=p.parent_id, page=p.page,
+                sheet=p.sheet, section=p.section, char_start=p.char_start,
+                char_end=p.char_end, text=p.text,
+            )
+        )
+        for c in p.children:
+            meta: dict[str, Any] = {
+                "doc_id": doc_id,
+                "owner_id": owner_id,
+                "chunk_id": c.chunk_id,
+                "parent_id": c.parent_id,
+                "char_start": c.char_start,
+                "char_end": c.char_end,
+                "source": p.source,
+                "section": c.section,
+            }
+            if p.page is not None:
+                meta["page"] = p.page
+            if p.sheet is not None:
+                meta["sheet"] = p.sheet
+            children.append(Chunk(c.chunk_id, c.text, meta))
+    return parents, children
 
 
 def _encode(embedder: Any, texts: list[str]) -> list[list[float]]:
@@ -98,8 +93,20 @@ def _encode(embedder: Any, texts: list[str]) -> list[list[float]]:
 
 
 class IngestionService:
-    def __init__(self, registry: Registry, store: VectorStore, embedder: Any | None = None) -> None:
+    def __init__(
+        self,
+        registry: Registry,
+        store: VectorStore,
+        embedder: Any | None = None,
+        parents: SqliteParents | None = None,
+    ) -> None:
         self._reg, self._store, self._embedder = registry, store, embedder
+        if parents is None:
+            # Parents share the registry's SQLite file (same DB_PATH).
+            if not isinstance(registry, SqliteRegistry):
+                raise TypeError("pass an explicit parents store for non-SQLite registries")
+            parents = SqliteParents(registry.db_path)
+        self._parents = parents
 
     def _emb(self) -> Any:
         if self._embedder is None:
@@ -123,7 +130,7 @@ class IngestionService:
             with _inflight_lock:
                 if doc.doc_id in _inflight:
                     return doc
-            await run_blocking(self._store.delete_doc, owner_id, doc.doc_id)
+            await run_blocking(self._purge, owner_id, doc.doc_id)
         with _inflight_lock:
             if doc.doc_id in _inflight:
                 return doc
@@ -141,9 +148,10 @@ class IngestionService:
         try:
             pages = await run_blocking(parse_uploaded_file, path, doc.mime)
             await run_blocking(self._reg.update_pages_or_sheets, owner, doc.doc_id, len(pages))
-            chunks = chunk_pages(pages, doc.doc_id, owner)
+            parents, chunks = chunk_pages(pages, doc.doc_id, owner)
             if not chunks:
                 raise EmptyDocumentError
+            await run_blocking(self._parents.replace_doc, owner, doc.doc_id, parents)
             for i in range(0, len(chunks), EMBED_BATCH):
                 batch = chunks[i : i + EMBED_BATCH]
                 vecs = await run_blocking(_encode, self._emb(), [c.text for c in batch])
@@ -169,6 +177,10 @@ class IngestionService:
             return
         await run_blocking(self._reg.update_status, owner, doc.doc_id, "ready")
 
+    def _purge(self, owner_id: str, doc_id: str) -> None:
+        self._store.delete_doc(owner_id, doc_id)
+        self._parents.delete_doc(owner_id, doc_id)
+
     def _fail(self, doc: Document, reason: str) -> None:
         """Purge partial vectors and mark failed. Synchronous so it also runs when cancelled.
 
@@ -177,6 +189,7 @@ class IngestionService:
         log.warning("ingest failed doc=%s reason=%s", doc.doc_id, reason)
         for step, args in (
             (self._store.delete_doc, (doc.owner_id, doc.doc_id)),
+            (self._parents.delete_doc, (doc.owner_id, doc.doc_id)),
             (self._reg.update_status, (doc.owner_id, doc.doc_id, "failed")),
         ):
             try:
@@ -193,5 +206,5 @@ class IngestionService:
         with _inflight_lock:
             if doc_id in _inflight:
                 raise DocumentBusyError(doc_id)
-        await run_blocking(self._store.delete_doc, owner_id, doc_id)
+        await run_blocking(self._purge, owner_id, doc_id)
         return await run_blocking(self._reg.delete, owner_id, doc_id)
