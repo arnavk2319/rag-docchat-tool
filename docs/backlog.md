@@ -31,7 +31,7 @@ Parallel after T-001: T-002, T-003, T-005. After those: T-004 and T-006 chain; T
 | T-010 | P1 | Hybrid BM25 + dense RRF | M | T-009 | done |
 | T-011 | P1 | Rerank, abstain, citations | M | T-004, T-010 | done |
 | T-012 | P1 | Map-reduce summarization + compression | M | T-007, T-009 | done |
-| T-013 | P2 | Tool framework + search/list/get_page tools | M | T-011 | approved |
+| T-013 | P2 | Tool framework + search/list/get_page tools | M | T-011 | done |
 | T-014 | P2 | summarize_document, compare_documents tools | S | T-012, T-013 | approved |
 | T-015 | P2 | query_table tool | M | T-013 | approved |
 | T-016 | P3 | Agent graph core + bounds | M | T-014, T-015 | approved |
@@ -62,3 +62,4 @@ Estimated total: 18 M x $4 + 5 S x $1.50 = $79.50 (caps, not expected spend).
 - Backfill BM25 indexes for documents ingested before T-010 (they stay dense-only until re-uploaded); document `MAX_UPLOAD_MB` (lowers the 10 MB cap, never raises it) in `.env.example` (human).
 - Vector store `query` counts matches via `get(include=[])`; swap for a cheaper count. BM25-only hits carry placeholder distance 1.0 and per-doc idf is not cross-doc comparable: revisit in T-011 abstention.
 - Calibrate MIN_RERANK_SCORE on the real bge reranker with the evaluator (0.0 is a placeholder; add the var to `.env.example`, human). Optional T-012 nits: escape double quotes in document names inside prompts; do not return a 200 partial on non-budget LLM errors after the first map call.
+- T-013 nits: _search lists owner docs twice; wrap() truncates after escaping (cosmetic partial entity); note in tools.md that callers must pass settings.min_rerank_score into ToolContext.

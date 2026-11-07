@@ -16,3 +16,5 @@ Models (embedder, reranker) are loaded once at startup by the registry in `core/
 Ingestion (`services/ingestion.py`) parses, chunks, embeds and stores documents in embedded Chroma (`store/chroma.py`) with `doc_id`/`owner_id` metadata; see [ingestion.md](ingestion.md).
 
 HTTP API (`api/`): routers `documents`, `summarize`, `query` under `/v1`, `deps.py` (temporary `X-User-Id` auth and app-wide services on `app.state`: registry, vector store, ingestion service, created in the lifespan), `errors.py` ({detail, code} bodies), `schemas.py`. See [api.md](api.md) and ADR-0002.
+
+Agent tools (`services/agent/tools.py`, allow-listed, owner-scoped, escaped results): see [tools.md](tools.md).
