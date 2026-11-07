@@ -11,6 +11,7 @@ import logging
 from collections import OrderedDict
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from ..core import llm
 from ..core.config import get_settings
@@ -83,7 +84,9 @@ def _remember(key: str, summary: str) -> None:
         _cache.popitem(last=False)
 
 
-async def summarize_documents(docs: Sequence[DocText], max_usd: float | None = None) -> SummaryResult:
+async def summarize_documents(
+    docs: Sequence[DocText], max_usd: float | None = None, cancel: Any = None
+) -> SummaryResult:
     s = get_settings()
     key = _cache_key(docs, s.summary_reduce_role, s.summary_compress, s.summary_batch_chars)
     if key in _cache:
@@ -105,6 +108,7 @@ async def summarize_documents(docs: Sequence[DocText], max_usd: float | None = N
         max_tokens=10_000_000,
         max_usd=s.summary_max_usd if max_usd is None else min(s.summary_max_usd, max_usd),
     )
+    budget.cancel = cancel  # threading.Event | None: checked before every LLM call
     map_p, red_p = load_prompt("summarize_map"), load_prompt("summarize_reduce")
     partials: list[tuple[str, str]] = []
     partial_flag = truncated

@@ -227,6 +227,7 @@ def _summarize(ctx: ToolContext, a: SummarizeArgs) -> str:
     res = _run_async(summarize_documents(
         [DocText(doc.filename, [p.text for p in ps])],
         max_usd=None if b is None else b.max_usd - b.usd,
+        cancel=None if b is None else b.cancel,
     ))
     if b is not None:  # count the summary's inner LLM calls against the run budget
         b.steps += res.llm_calls

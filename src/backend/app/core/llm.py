@@ -9,6 +9,7 @@ import hashlib
 import json
 import logging
 import random
+import threading
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -71,8 +72,11 @@ class Budget:
         self.max_steps, self.max_tokens, self.max_usd = max_steps, max_tokens, max_usd
         self.steps = self.tokens = 0
         self.usd = 0.0
+        self.cancel: threading.Event | None = None  # per-run; set => no new LLM call starts
 
     def check(self) -> None:
+        if self.cancel is not None and self.cancel.is_set():
+            raise BudgetExceeded("cancelled")
         if self.steps >= self.max_steps:
             raise BudgetExceeded(f"steps {self.steps}/{self.max_steps}")
         if self.tokens >= self.max_tokens:

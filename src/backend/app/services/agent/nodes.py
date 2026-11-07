@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Any, TypedDict
 
@@ -79,6 +80,7 @@ class Deps:
     ctx: ToolContext  # ctx.budget is the per-run Budget
     budget: llm.Budget
     run_id: str
+    emit: Callable[[str, dict[str, Any]], None] | None = None  # per-run event hook (SSE); sync, non-blocking
 
 
 class Skip(Exception):

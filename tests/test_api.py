@@ -233,9 +233,9 @@ def test_query_no_documents_abstains_without_llm(client, monkeypatch):
     assert body["abstained"] is True and body["citations"] == []
 
 
-def test_query_session_and_stream_accepted_and_ignored(client):
+def test_query_session_accepted_and_ignored(client):
     one(client)
-    r = client.post("/v1/query", json={"question": "sky", "session_id": "s1", "stream": True}, headers=A)
+    r = client.post("/v1/query", json={"question": "sky", "session_id": "s1"}, headers=A)
     assert r.status_code == 200 and "answer" in r.json()
 
 

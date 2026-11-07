@@ -18,3 +18,5 @@ Ingestion (`services/ingestion.py`) parses, chunks, embeds and stores documents 
 HTTP API (`api/`): routers `documents`, `summarize`, `query` under `/v1`, `deps.py` (temporary `X-User-Id` auth and app-wide services on `app.state`: registry, vector store, ingestion service, created in the lifespan), `errors.py` ({detail, code} bodies), `schemas.py`. See [api.md](api.md) and ADR-0002.
 
 Agent tools (`services/agent/tools.py`, allow-listed, owner-scoped, escaped results): see [tools.md](tools.md).
+
+Agent flow over HTTP (T-019): `POST /v1/query` with `stream=true` -> auth and owner-scoped doc resolution (plain JSON errors) -> `api/sse.py` starts `run_agent` as a task with a per-run event hook -> router/plan/tool/grade/rewrite/answer/groundedness nodes emit `step`/`tool_call`/`tool_result` into a queue -> the generator sanitises, numbers (`seq`) and frames them, then emits `token`, `citations`, `final`. Client disconnect cancels the task. Event schema: [api.md](api.md).

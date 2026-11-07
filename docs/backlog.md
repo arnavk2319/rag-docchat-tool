@@ -37,7 +37,7 @@ Parallel after T-001: T-002, T-003, T-005. After those: T-004 and T-006 chain; T
 | T-016 | P3 | Agent graph core + bounds | M | T-014, T-015 | done |
 | T-017 | P3 | Grade, rewrite, groundedness | M | T-016 | done |
 | T-018 | P3 | Ollama provider | S | T-002 | done |
-| T-019 | P3 | Agent SSE endpoint (needs_architect) | M | T-017 | approved |
+| T-019 | P3 | Agent SSE endpoint (needs_architect) | M | T-017 | done |
 | T-020 | P4 | Per-session memory (needs_architect) | M | T-019 | approved |
 | T-021 | P4 | Prompt-injection defences | M | T-019 | approved |
 | T-022 | P4 | Rate limit, spend cap, PII-safe logs | M | T-019 | approved |
@@ -67,3 +67,6 @@ Estimated total: 18 M x $4 + 5 S x $1.50 = $79.50 (caps, not expected spend).
 - Agent loop (T-016) must count tool LLM calls (summarize_document, compare_documents) against the per-run USD/token budget and pass settings.min_rerank_score into ToolContext; keep module state used by _run_async free of loop-bound objects.
 - query_table: no wall-clock timeout and pandas work is synchronous; consider asyncio.to_thread plus a timeout.
 - AGENT_MAX_TOKENS env var (currently constant 30000 in services/agent/graph.py); human adds it to .env.example (T-016 review).
+- Move agent stream citations to chunk-level `Citation` (page/sheet/span) before a frontend depends on the doc-level `{doc_id, filename, span}` shape (T-019 review).
+- T-020 (sessions): validate `session_id` before the stream opens, add a history param to `run_agent`, echo `session_id` in `final`.
+- T-022 (limits): rate-limit and spend-cap checks before the stream opens; record per-user spend from `final.usage`, including partial spend on disconnect.

@@ -7,7 +7,10 @@ The graph is built per run with closures over that run's deps, so no module stat
 
 from __future__ import annotations
 
+import logging
+import threading
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -20,6 +23,7 @@ from . import nodes
 from .nodes import AgentState, Deps
 from .tools import ToolContext
 
+log = logging.getLogger("app.agent")
 AGENT_MAX_TOKENS = 30_000  # per-run token cap (no env knob yet; see docs/architecture/agent.md)
 MAX_QUESTION_CHARS = 2000
 
@@ -41,26 +45,38 @@ class AgentResult:
 
 
 def build_graph(d: Deps, verify: bool = True) -> Any:
-    async def n_router(s: AgentState) -> AgentState:
-        return await nodes.router(s, d)
+    def wrap(name: str, label: str, fn: Any) -> Any:
+        # Optional per-run event hook: emits step (and tool_call/tool_result) around a node.
+        async def run(s: AgentState) -> AgentState:
+            raw = d.emit
+            if raw is None:
+                return await fn(s, d)
 
-    async def n_plan(s: AgentState) -> AgentState:
-        return await nodes.plan(s, d)
+            def em(name_: str, payload: dict[str, Any]) -> None:
+                try:
+                    raw(name_, payload)
+                except Exception:  # noqa: BLE001 - a broken hook must never fail the run
+                    log.warning("event hook failed", extra={"run_id": d.run_id})
 
-    async def n_tool(s: AgentState) -> AgentState:
-        return await nodes.tool(s, d)
+            pending = s.get("pending") or {}
+            if name == "tool":
+                em("tool_call", {"tool": pending.get("tool", ""), "args": pending.get("args", {})})
+            out = await fn(s, d)
+            if name == "tool":
+                last = (out.get("history") or [{}])[-1].get("result", "")
+                em("tool_result", {"tool": pending.get("tool", ""), "result": last})
+            em("step", {"node": label, "n": out.get("steps", s.get("steps", 0))})
+            return out
 
-    async def n_grade(s: AgentState) -> AgentState:
-        return await nodes.grade(s, d)
+        return run
 
-    async def n_rewrite(s: AgentState) -> AgentState:
-        return await nodes.rewrite(s, d)
-
-    async def n_ground(s: AgentState) -> AgentState:
-        return await nodes.groundedness(s, d)
-
-    async def n_answer(s: AgentState) -> AgentState:
-        return await nodes.answer(s, d)
+    n_router = wrap("router", "router", nodes.router)
+    n_plan = wrap("plan", "plan", nodes.plan)
+    n_tool = wrap("tool", "tool", nodes.tool)
+    n_grade = wrap("grade", "grade", nodes.grade)
+    n_rewrite = wrap("rewrite", "rewrite", nodes.rewrite)
+    n_ground = wrap("ground", "groundedness", nodes.groundedness)
+    n_answer = wrap("answer", "answer", nodes.answer)
 
     g = StateGraph(AgentState)
     g.add_node("router", n_router)
@@ -111,6 +127,9 @@ async def run_agent(
     max_tokens: int = AGENT_MAX_TOKENS,
     max_usd: float | None = None,
     verify: bool = True,
+    run_id: str | None = None,
+    on_event: Callable[[str, dict[str, Any]], None] | None = None,
+    cancel: threading.Event | None = None,
 ) -> AgentResult:
     s = get_settings()
     max_steps = max_steps or s.agent_max_steps
@@ -119,8 +138,9 @@ async def run_agent(
         max_tokens=max_tokens,
         max_usd=s.agent_max_usd if max_usd is None else max_usd,
     )
+    budget.cancel = cancel
     ctx = replace(ctx, budget=budget, min_rerank_score=s.min_rerank_score)
-    d = Deps(ctx=ctx, budget=budget, run_id=uuid.uuid4().hex[:12])
+    d = Deps(ctx=ctx, budget=budget, run_id=run_id or uuid.uuid4().hex[:12], emit=on_event)
     graph = build_graph(d, verify)
     last: AgentState = {"question": question[:MAX_QUESTION_CHARS], "steps": 0, "history": []}
     stop = ""

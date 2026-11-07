@@ -1,18 +1,22 @@
 """POST /v1/query: single-shot hybrid retrieval + one `agent` LLM call, with citations.
 
-`session_id` and `stream` are accepted in the schema but ignored here: sessions arrive in
-T-020 and SSE streaming in T-019 (ADR-0002 sections 4-5). `abstained` is true only when
+`session_id` is accepted but ignored until T-020. `stream=true` runs the agent and streams SSE
+(T-019, ADR-0002 section 4); all 401/404/409/422 errors are plain JSON raised before it opens. `abstained` is true only when
 retrieval returns nothing or the top rerank score is below MIN_RERANK_SCORE (no LLM call).
 Pipeline: hybrid top-N -> parents -> cross-encoder rerank -> top_k parents -> LLM.
 """
 
-from fastapi import APIRouter, Depends
+from typing import Any
+
+from fastapi import APIRouter, Depends, Request
+from fastapi.responses import StreamingResponse
 
 from ..core import llm
 from ..core.concurrency import run_blocking
 from ..core.config import get_settings
 from ..core.models import get_models
 from ..core.prompts import load_prompt
+from ..services.agent.tools import ToolContext
 from ..services.parent_lookup import expand_to_parents
 from ..services.rerank import pick_cited_children, rerank_parents
 from ..services.retrieval import TOP_N, hybrid_search
@@ -26,6 +30,7 @@ from .deps import (
 )
 from .rag import citation_for, embed_one, escape, resolve_ready_docs
 from .schemas import ErrorBody, QueryRequest, QueryResponse
+from .sse import stream_agent
 
 router = APIRouter(prefix="/v1", tags=["query"])
 IDK = "I don't know."
@@ -44,18 +49,21 @@ IDK = "I don't know."
     },
 )
 async def query(
+    request: Request,
     body: QueryRequest,
     user: CurrentUser,
     registry: RegistryDep,
     store: StoreDep,
     parents: ParentsDep,
     bm25: Bm25Dep,
-) -> QueryResponse:
+) -> Any:
     if body.doc_ids is not None:
         docs = await resolve_ready_docs(registry, user, list(dict.fromkeys(body.doc_ids)))
     else:
         docs = [d for d in await run_blocking(registry.list_by_owner, user) if d.status == "ready"]
     names = {d.doc_id: d.filename for d in docs}
+    if body.stream:
+        return _sse_response(request, body, user, names, registry, store, parents, bm25)
     if not names:
         return QueryResponse(answer=IDK, citations=[], abstained=True)
 
@@ -103,3 +111,23 @@ async def query(
     )
     cites = [citation_for(best[ph.parent.parent_id], names[ph.parent.doc_id]) for ph in phits]
     return QueryResponse(answer=res.text.strip(), citations=cites, abstained=False)
+
+
+def _embed_sync(text: str) -> list[float]:
+    vecs = get_models().embedder.encode([text])
+    return [float(x) for x in vecs[0]]
+
+
+def _sse_response(
+    request: Request, body: QueryRequest, user: str, names: dict[str, str],
+    registry: Any, store: Any, parents: Any, bm25: Any,
+) -> StreamingResponse:
+    ctx = ToolContext(
+        owner_id=user, doc_ids=list(names), registry=registry, vectors=store, parents=parents,
+        bm25=bm25, embed=_embed_sync, reranker=get_models().reranker,
+    )
+    return StreamingResponse(
+        stream_agent(request, body.question, ctx, names),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
