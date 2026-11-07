@@ -9,8 +9,10 @@ Updated: 2026-11-06 · Mode: autopilot · Phase: ready for /autopilot (Gate A ap
 - Integration branch is `dev` (kit.json already says so). Human override: tickets squash-merge into `dev` directly, NO PRs (see CLAUDE.md).
 - Baseline committed on `dev`. chroma_db/, logs/, worktrees/ are gitignored.
 
+- Human: no Anthropic key for now; old OpenAI key removed. Build and all tests run on `LLM_PROVIDER=mock`. No paid API is called by agents.
+
 ## Open (human)
-- `ANTHROPIC_API_KEY` goes in .env (agents cannot edit it). Rotate/revoke the old exposed OpenAI key.
+- Live LLM use later: add `ANTHROPIC_API_KEY` to .env (or run Ollama, `LLM_PROVIDER=ollama`). Until then T-023 evals run on scripted mock answers only; real faithfulness/relevance numbers need a live model.
 - Git history still holds the personal citizenship documents (Later).
 
 ## Next
