@@ -1,6 +1,6 @@
 ---
-id: query
-version: 2
+id: answer
+version: 1
 model_tier: agent
 updated: 2026-11-07
 ---

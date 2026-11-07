@@ -29,7 +29,7 @@ Parallel after T-001: T-002, T-003, T-005. After those: T-004 and T-006 chain; T
 | T-008 | P0 | Upload validation hardening | S | T-007 | done |
 | T-009 | P1 | Parent-child chunking | M | T-006 | done |
 | T-010 | P1 | Hybrid BM25 + dense RRF | M | T-009 | done |
-| T-011 | P1 | Rerank, abstain, citations | M | T-004, T-010 | approved |
+| T-011 | P1 | Rerank, abstain, citations | M | T-004, T-010 | done |
 | T-012 | P1 | Map-reduce summarization + compression | M | T-007, T-009 | done |
 | T-013 | P2 | Tool framework + search/list/get_page tools | M | T-011 | approved |
 | T-014 | P2 | summarize_document, compare_documents tools | S | T-012, T-013 | approved |
@@ -61,3 +61,4 @@ Estimated total: 18 M x $4 + 5 S x $1.50 = $79.50 (caps, not expected spend).
 - Move GET /v1/documents pagination into SQL LIMIT/OFFSET instead of slicing in memory.
 - Backfill BM25 indexes for documents ingested before T-010 (they stay dense-only until re-uploaded); document `MAX_UPLOAD_MB` (lowers the 10 MB cap, never raises it) in `.env.example` (human).
 - Vector store `query` counts matches via `get(include=[])`; swap for a cheaper count. BM25-only hits carry placeholder distance 1.0 and per-doc idf is not cross-doc comparable: revisit in T-011 abstention.
+- Calibrate MIN_RERANK_SCORE on the real bge reranker with the evaluator (0.0 is a placeholder; add the var to `.env.example`, human). Optional T-012 nits: escape double quotes in document names inside prompts; do not return a 200 partial on non-budget LLM errors after the first map call.

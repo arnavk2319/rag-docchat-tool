@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     db_path: str = "data/docchat.db"
     embed_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     rerank_model: str = "BAAI/bge-reranker-base"
+    min_rerank_score: float = 0.0  # env MIN_RERANK_SCORE; abstain if top rerank score is below
     models_fake: bool = False  # env MODELS_FAKE; test-only
     max_upload_mb: int = Field(default=10, gt=0)
     rate_limit_per_min: int = Field(default=30, gt=0)

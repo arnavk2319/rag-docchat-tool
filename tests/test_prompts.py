@@ -2,7 +2,7 @@ import pytest
 from app.core.prompts import PROMPTS_DIR, PromptError, load_prompt, parse_prompt
 
 
-@pytest.mark.parametrize("name,tier", [("query", "agent"), ("summarize", "fast")])
+@pytest.mark.parametrize("name,tier", [("answer", "agent"), ("summarize", "fast")])
 def test_shipped_prompts_load(name, tier):
     p = load_prompt(name)
     assert p.id == name and p.version >= 1 and p.model_tier == tier
@@ -10,14 +10,14 @@ def test_shipped_prompts_load(name, tier):
 
 
 def test_render_inserts_values_verbatim():
-    p = load_prompt("query")
+    p = load_prompt("answer")
     out = p.render(context="{x} {{y}}", question="q")
     assert "{x} {{y}}" in out
 
 
 def test_render_missing_placeholder():
     with pytest.raises(PromptError):
-        load_prompt("query").render(context="c")
+        load_prompt("answer").render(context="c")
 
 
 @pytest.mark.parametrize("name", ["../x", "a/b", "A", "", "no_such_prompt"])

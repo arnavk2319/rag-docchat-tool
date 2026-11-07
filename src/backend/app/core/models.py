@@ -1,6 +1,7 @@
 """Model registry: embedder and reranker loaded once, shared by all requests."""
 
 import logging
+import re
 import sys
 import threading
 from collections.abc import Callable
@@ -19,9 +20,18 @@ class FakeEmbedder:
         return [[float(len(t) % 7), float(len(t) % 11), 1.0] for t in texts]
 
 
+_WORD = re.compile(r"[a-z0-9]{3,}")
+
+
 class FakeReranker:
+    """Deterministic lexical stand-in: fraction of query words (3+ chars) found in the passage."""
+
     def predict(self, pairs: list[tuple[str, str]], **_: Any) -> list[float]:
-        return [0.0 for _ in pairs]
+        out: list[float] = []
+        for q, p in pairs:
+            qw = set(_WORD.findall(q.lower()))
+            out.append(len(qw & set(_WORD.findall(p.lower()))) / len(qw) if qw else 0.0)
+        return out
 
 
 def _real_embedder(model_id: str) -> Any:

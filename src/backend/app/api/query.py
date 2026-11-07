@@ -2,16 +2,20 @@
 
 `session_id` and `stream` are accepted in the schema but ignored here: sessions arrive in
 T-020 and SSE streaming in T-019 (ADR-0002 sections 4-5). `abstained` is true only when
-retrieval returns nothing (no LLM call); score-based abstention arrives in T-010.
+retrieval returns nothing or the top rerank score is below MIN_RERANK_SCORE (no LLM call).
+Pipeline: hybrid top-N -> parents -> cross-encoder rerank -> top_k parents -> LLM.
 """
 
 from fastapi import APIRouter, Depends
 
 from ..core import llm
 from ..core.concurrency import run_blocking
+from ..core.config import get_settings
+from ..core.models import get_models
 from ..core.prompts import load_prompt
 from ..services.parent_lookup import expand_to_parents
-from ..services.retrieval import hybrid_search
+from ..services.rerank import pick_cited_children, rerank_parents
+from ..services.retrieval import TOP_N, hybrid_search
 from .deps import (
     Bm25Dep,
     CurrentUser,
@@ -58,21 +62,32 @@ async def query(
     vec = await embed_one(body.question)
     # Hybrid (BM25 + dense, RRF), always scoped to the resolved ready docs of this owner.
     hits = await run_blocking(
-        hybrid_search, user, body.question, vec, store, bm25, list(names), body.top_k
+        hybrid_search,
+        user,
+        body.question,
+        vec,
+        store,
+        bm25,
+        list(names),
+        max(body.top_k, TOP_N),
     )
     if not hits:
         return QueryResponse(answer=IDK, citations=[], abstained=True)
 
-    # Prompt context = deduplicated PARENT texts in best-child order; citations stay on children.
-    phits = await run_blocking(expand_to_parents, user, hits, parents)
-    if not phits:
+    # Candidates -> deduplicated parents -> cross-encoder rerank to top_k parents.
+    cands = await run_blocking(expand_to_parents, user, hits, parents)
+    ranked = await run_blocking(
+        rerank_parents, get_models().reranker, body.question, cands, body.top_k
+    )
+    if not ranked or ranked[0][1] < get_settings().min_rerank_score:
         return QueryResponse(answer=IDK, citations=[], abstained=True)
+    phits = [ph for ph, _ in ranked]
     context = "\n".join(
         f'<excerpt id="c{i}" source="{escape(names[ph.parent.doc_id])}">\n'
         f"{escape(ph.parent.text)}\n</excerpt>"
         for i, ph in enumerate(phits, 1)
     )
-    prompt = load_prompt("query")
+    prompt = load_prompt("answer")
     res = await llm.complete(
         [
             {
@@ -83,5 +98,8 @@ async def query(
         model_role="agent",
         max_tokens=1024,
     )
-    cites = [citation_for(h, names[h.metadata["doc_id"]]) for h in hits]
+    best = await run_blocking(
+        pick_cited_children, get_models().reranker, body.question, phits, hits
+    )
+    cites = [citation_for(best[ph.parent.parent_id], names[ph.parent.doc_id]) for ph in phits]
     return QueryResponse(answer=res.text.strip(), citations=cites, abstained=False)
