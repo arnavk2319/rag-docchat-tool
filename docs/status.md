@@ -15,5 +15,8 @@ Updated: 2026-11-06 · Mode: autopilot · Phase: ready for /autopilot (Gate A ap
 - Live LLM use later: add `ANTHROPIC_API_KEY` to .env (or run Ollama, `LLM_PROVIDER=ollama`). Until then T-023 evals run on scripted mock answers only; real faithfulness/relevance numbers need a live model.
 - Git history still holds the personal citizenship documents (Later).
 
+## Autopilot progress
+- T-001: implemented in worktrees/t-001-uv-layout (uncommitted). ruff + pytest + `import app.main` verified by orchestrator. PAUSED: acceptance needs `.env.example` with the 12 variables; a user deny rule blocks agents from reading/writing `.env*`. Test-writer, reviewer, merge not yet run.
+
 ## Next
-- Run `/autopilot` (start Claude Code with /opt/homebrew/bin on PATH so uv and gh resolve).
+- Human: write the 12 lines into worktrees/t-001-uv-layout/.env.example (or allow that one path), then re-run `/autopilot`.
