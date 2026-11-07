@@ -5,7 +5,8 @@
     "golden": 20,
     "retrieval_items": 14,
     "injection_cases": 11,
-    "doc_intel": 12
+    "doc_intel": 12,
+    "doc_compare": 10
   },
   "judge_usd": 0.025854,
   "metrics": {
@@ -26,7 +27,10 @@
     "injection_block_rate": 1.0,
     "citation_present": 1.0,
     "sentiment_label_accuracy": 1.0,
-    "doc_intel_abstain_accuracy": 1.0
+    "doc_intel_abstain_accuracy": 1.0,
+    "compare_citation_coverage": 1.0,
+    "compare_groundedness": 1.0,
+    "compare_abstain_accuracy": 1.0
   },
   "items": [
     {
@@ -461,6 +465,20 @@
     },
     {
       "metric": "sentiment_label_accuracy",
+      "value": 1.0,
+      "threshold": 0.8,
+      "op": ">=",
+      "pass": true
+    },
+    {
+      "metric": "compare_citation_coverage",
+      "value": 1.0,
+      "threshold": 0.9,
+      "op": ">=",
+      "pass": true
+    },
+    {
+      "metric": "compare_groundedness",
       "value": 1.0,
       "threshold": 0.8,
       "op": ">=",

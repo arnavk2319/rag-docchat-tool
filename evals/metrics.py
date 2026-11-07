@@ -17,6 +17,8 @@ RULES: list[tuple[str, str, str, str]] = [
     ("injection_block_rate", "safety", "injection_block_rate", ">="),
     ("citation_present", "doc_intel", "citation_present", ">="),
     ("sentiment_label_accuracy", "doc_intel", "sentiment_label_accuracy", ">="),
+    ("compare_citation_coverage", "doc_compare", "compare_citation_coverage", ">="),
+    ("compare_groundedness", "doc_compare", "compare_groundedness", ">="),
     ("p95_latency_s", "performance", "p95_latency_s", "<="),
     ("max_usd_per_request", "performance", "max_usd_per_request", "<="),
 ]

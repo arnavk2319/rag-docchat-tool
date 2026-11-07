@@ -71,6 +71,93 @@
         "title": "Citation",
         "type": "object"
       },
+      "ComparePoint": {
+        "properties": {
+          "citations": {
+            "items": {
+              "$ref": "#/components/schemas/Citation"
+            },
+            "title": "Citations",
+            "type": "array"
+          },
+          "point": {
+            "title": "Point",
+            "type": "string"
+          }
+        },
+        "required": [
+          "point",
+          "citations"
+        ],
+        "title": "ComparePoint",
+        "type": "object"
+      },
+      "CompareRequest": {
+        "properties": {
+          "doc_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 5,
+            "minItems": 2,
+            "title": "Doc Ids",
+            "type": "array"
+          },
+          "focus": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Focus",
+            "type": "string"
+          }
+        },
+        "required": [
+          "doc_ids"
+        ],
+        "title": "CompareRequest",
+        "type": "object"
+      },
+      "CompareResponse": {
+        "properties": {
+          "abstained": {
+            "default": false,
+            "title": "Abstained",
+            "type": "boolean"
+          },
+          "differences": {
+            "items": {
+              "$ref": "#/components/schemas/ComparePoint"
+            },
+            "title": "Differences",
+            "type": "array"
+          },
+          "doc_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Doc Ids",
+            "type": "array"
+          },
+          "partial": {
+            "default": false,
+            "title": "Partial",
+            "type": "boolean"
+          },
+          "similarities": {
+            "items": {
+              "$ref": "#/components/schemas/ComparePoint"
+            },
+            "title": "Similarities",
+            "type": "array"
+          }
+        },
+        "required": [
+          "doc_ids",
+          "similarities",
+          "differences"
+        ],
+        "title": "CompareResponse",
+        "type": "object"
+      },
       "DocSentimentResponse": {
         "properties": {
           "abstained": {
@@ -679,6 +766,131 @@
         "summary": "Health",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/v1/compare": {
+      "post": {
+        "operationId": "compare_v1_compare_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-on-behalf-of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-On-Behalf-Of"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompareResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          }
+        },
+        "summary": "Compare",
+        "tags": [
+          "documents"
         ]
       }
     },

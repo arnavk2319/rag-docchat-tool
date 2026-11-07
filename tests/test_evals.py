@@ -30,7 +30,8 @@ def result():
 
 def test_golden_composition():
     all_items = [ln for ln in (ROOT / "evals/golden.jsonl").read_text().splitlines() if ln.strip()]
-    assert len(all_items) == 20 + len(R.load_docintel()) and len(R.load_docintel()) >= 10
+    assert len(all_items) == 20 + len(R.load_docintel()) + len(R.load_compare()) and len(R.load_docintel()) >= 10
+    assert len(R.load_compare()) >= 8
     kinds = [g["type"] for g in GOLD]
     assert kinds.count("factual") >= 12 and kinds.count("out_of_corpus") == 3
     assert kinds.count("table") == 3 and kinds.count("comparison") == 2
@@ -83,7 +84,7 @@ def test_support_detects_unsupported_claims():
 
 def test_mock_run_is_labelled_and_offline(result):
     assert result["label"] == "mock" and "NOT model quality" in result["note"]
-    assert result["counts"] == {"golden": 20, "retrieval_items": 14, "injection_cases": 11, "doc_intel": 12}
+    assert result["counts"] == {"golden": 20, "retrieval_items": 14, "injection_cases": 11, "doc_intel": 12, "doc_compare": 10}
     m = result["metrics"]
     for k in ("recall_at_5", "mrr", "faithfulness", "relevance", "citation_correct",
               "task_success", "avg_steps", "injection_block_rate", "p95_latency_s"):

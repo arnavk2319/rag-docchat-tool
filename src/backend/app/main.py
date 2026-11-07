@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.exceptions import HTTPException
 
-from .api import docintel, documents, query, sessions, summarize
+from .api import compare, docintel, documents, query, sessions, summarize
 from .api.deps import ApiError
 from .api.errors import http_error, install_error_handlers
 from .core.concurrency import run_blocking
@@ -147,6 +147,7 @@ def create_app() -> FastAPI:
     application.include_router(documents.router)
     application.include_router(summarize.router)
     application.include_router(docintel.router)
+    application.include_router(compare.router)
     application.include_router(query.router)
     application.include_router(sessions.router)
     install_error_handlers(application, http_exception_handle_logging)

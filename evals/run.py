@@ -59,7 +59,7 @@ def norm(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip().lower()
 
 
-DOC_INTEL_TYPES = ("summary", "sentiment")  # T-030 items: inline text, no retrieval/agent
+DOC_INTEL_TYPES = ("summary", "sentiment", "doc_compare")  # T-030/T-031 items: inline text, no retrieval/agent
 
 
 def _load_all(path: Path) -> list[dict[str, Any]]:
@@ -72,7 +72,11 @@ def load_golden(path: Path = EVALS / "golden.jsonl") -> list[dict[str, Any]]:
 
 
 def load_docintel(path: Path = EVALS / "golden.jsonl") -> list[dict[str, Any]]:
-    return [g for g in _load_all(path) if g["type"] in DOC_INTEL_TYPES]
+    return [g for g in _load_all(path) if g["type"] in DOC_INTEL_TYPES and g["type"] != "doc_compare"]
+
+
+def load_compare(path: Path = EVALS / "golden.jsonl") -> list[dict[str, Any]]:
+    return [g for g in _load_all(path) if g["type"] == "doc_compare"]
 
 
 POS = {"wonderful", "friendly", "helpful", "spotless", "excellent", "loved", "love", "delighted",
@@ -112,6 +116,45 @@ async def doc_intel_rows(golden: list[dict[str, Any]], scripted: bool) -> list[d
         llm.mock_script()
         rows.append({"id": g["id"], "type": g["type"], "abstain": g["abstain"], "ok": ok,
                      "abstained": r.abstained, "cited": bool(r.cited)})
+    return rows
+
+
+def _words(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9]+", text.lower()) if w not in STOP and len(w) > 2}
+
+
+async def compare_rows(golden: list[dict[str, Any]], scripted: bool) -> list[dict[str, Any]]:
+    """Run each comparison item through the real compare service. Mock script: one similarity and one
+    difference built from the first sentence of each document, citing each document's section."""
+    from app.core import llm
+    from app.services.compare import compare_docs
+    from app.store.parents import Parent
+
+    rows = []
+    for g in golden:
+        per_doc, firsts = [], []
+        for n, text in enumerate(g["texts"]):
+            did = f"{g['id']}-{n}"
+            parent = Parent(owner_id=OWNER, doc_id=did, parent_id=f"{did}-0", char_start=0,
+                            char_end=len(text), text=text)
+            per_doc.append((did, [parent]))
+            firsts.append(re.split(r"(?<=[.!?])\s+", text)[0])
+        idx = list(range(len(per_doc)))
+        llm.mock_script(*([J(similarities=[{"point": " ".join(firsts), "sections": idx}],
+                             differences=[{"point": " ".join(firsts), "sections": idx}],
+                             insufficient=False)] if scripted else []))
+        r = await compare_docs(per_doc, g["focus"])
+        llm.mock_script()
+        pts = [*r.similarities, *r.differences]
+        cited_docs = {p.doc_id for x in pts for p in x.cited}
+        # coverage: share of documents cited by at least one point
+        cov = len(cited_docs) / len(per_doc) if pts else 0.0
+        # groundedness: share of point content words found in the text of the sections it cites
+        gr = [len(_words(x.point) & _words(" ".join(p.text for p in x.cited))) / max(1, len(_words(x.point)))
+              for x in pts]
+        rows.append({"id": g["id"], "abstain": g["abstain"], "abstained": r.abstained,
+                     "coverage": cov, "grounded": M.mean(gr) if gr else 0.0,
+                     "ok": r.abstained if g["abstain"] else not r.abstained})
     return rows
 
 
@@ -437,6 +480,7 @@ async def compute(mode: str) -> dict[str, Any]:
         rows = await run_items(ctx, ids, golden, scripted, cache, spend)
         inj, n_inj = await injection_rate(tmp)
         di = await doc_intel_rows(load_docintel(), scripted)
+        cmp_rows = await compare_rows(load_compare(), scripted)
     if not scripted:
         cache_path.parent.mkdir(exist_ok=True)
         cache_path.write_text(json.dumps(cache))
@@ -466,13 +510,16 @@ async def compute(mode: str) -> dict[str, Any]:
         "sentiment_label_accuracy": M.mean(
             [float(r["ok"]) for r in di if r["type"] == "sentiment" and not r["abstain"]]),
         "doc_intel_abstain_accuracy": M.mean([float(r["ok"]) for r in di if r["abstain"]]),
+        "compare_citation_coverage": M.mean([r["coverage"] for r in cmp_rows if not r["abstain"]]),
+        "compare_groundedness": M.mean([r["grounded"] for r in cmp_rows if not r["abstain"]]),
+        "compare_abstain_accuracy": M.mean([float(r["ok"]) for r in cmp_rows if r["abstain"]]),
     }
     return {
         "label": mode,
         "note": ("MOCK: scripted stand-in model + fake embedder/reranker. Proves the pipeline is "
                  "wired and measured, NOT model quality." if scripted else "LIVE run"),
         "counts": {"golden": len(golden), "retrieval_items": len(ret), "injection_cases": n_inj,
-                   "doc_intel": len(di)},
+                   "doc_intel": len(di), "doc_compare": len(cmp_rows)},
         "judge_usd": round(sum(spend), 6),
         "metrics": {k: round(v, 4) for k, v in metrics.items()},
         "items": rows,

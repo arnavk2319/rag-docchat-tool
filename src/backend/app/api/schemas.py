@@ -137,3 +137,27 @@ class DocSentimentResponse(BaseModel):
     citations: list[Citation]
     abstained: bool = False
     partial: bool = False
+
+
+class CompareRequest(BaseModel):
+    doc_ids: list[str] = Field(min_length=2, max_length=5)
+    focus: str = Field(default="", max_length=200)
+
+    @model_validator(mode="after")
+    def _distinct(self) -> Self:
+        if len(set(self.doc_ids)) < 2:
+            raise ValueError("provide at least 2 distinct doc_ids")
+        return self
+
+
+class ComparePoint(BaseModel):
+    point: str
+    citations: list[Citation]  # built server-side from stored records; cover each document cited
+
+
+class CompareResponse(BaseModel):
+    doc_ids: list[str]
+    similarities: list[ComparePoint]
+    differences: list[ComparePoint]
+    abstained: bool = False
+    partial: bool = False  # document text was cut at the prompt cap
