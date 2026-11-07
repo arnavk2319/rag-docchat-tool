@@ -27,7 +27,7 @@ Parallel after T-001: T-002, T-003, T-005. After those: T-004 and T-006 chain; T
 | T-006 | P0 | Ingestion + embedded Chroma with doc_id metadata | M | T-004, T-005 | done |
 | T-007 | P0 | Five endpoints (needs_architect) | M | T-002, T-006 | approved |
 | T-008 | P0 | Upload validation hardening | S | T-007 | approved |
-| T-009 | P1 | Parent-child chunking | M | T-006 | approved |
+| T-009 | P1 | Parent-child chunking | M | T-006 | done |
 | T-010 | P1 | Hybrid BM25 + dense RRF | M | T-009 | approved |
 | T-011 | P1 | Rerank, abstain, citations | M | T-004, T-010 | approved |
 | T-012 | P1 | Map-reduce summarization + compression | M | T-007, T-009 | approved |
