@@ -36,7 +36,7 @@ Parallel after T-001: T-002, T-003, T-005. After those: T-004 and T-006 chain; T
 | T-015 | P2 | query_table tool | M | T-013 | approved |
 | T-016 | P3 | Agent graph core + bounds | M | T-014, T-015 | approved |
 | T-017 | P3 | Grade, rewrite, groundedness | M | T-016 | approved |
-| T-018 | P3 | Ollama provider | S | T-002 | approved |
+| T-018 | P3 | Ollama provider | S | T-002 | done |
 | T-019 | P3 | Agent SSE endpoint (needs_architect) | M | T-017 | approved |
 | T-020 | P4 | Per-session memory (needs_architect) | M | T-019 | approved |
 | T-021 | P4 | Prompt-injection defences | M | T-019 | approved |
