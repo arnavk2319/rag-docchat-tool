@@ -12,11 +12,13 @@ Only the human (via Gate A) moves a ticket from draft to approved.
 | P2 | Read-only tools | T-013..T-015 | approved |
 | P3 | LangGraph agent, Ollama, SSE | T-016..T-019 | approved |
 | P4 | Sessions, injection defences, limits, golden-set evals | T-020..T-023 | approved |
-| P5 | Service platform: pgvector, object store, auth, tenancy, doc-intelligence, deploy (all before frontend) | T-024..T-033 | approved |
+| P5 | Service platform: pgvector, object store, auth, tenancy, doc-intelligence, deploy; frontend-enabling backend T-034..T-037 | T-024..T-033, T-034..T-037 | T-024..T-033 approved; T-034..T-037 draft |
+| P6 | Frontend: Vite + React SPA in `web/`, mock-first (parallel with P5; ADR-0004) | T-038..T-047 | approved |
 
 ## Tickets
 
 Parallel after T-001: T-002, T-003, T-005. After those: T-004 and T-006 chain; T-012 and T-010 independent of each other; T-018 independent anytime after T-002; T-014 and T-015 parallel; T-021 and T-022 parallel after T-019.
+P6 is mock-first: T-038..T-045 need no P5 work and can run in parallel with P5. T-046 is blocked on T-030/T-031. T-047 (switch to real API) is the only P6 ticket that needs the P5 frontend-enabling backend tickets.
 
 | Ticket | Phase | Title | Size | Depends on | Status |
 | ------ | ----- | ----- | ---- | ---------- | ------ |
@@ -51,14 +53,29 @@ Parallel after T-001: T-002, T-003, T-005. After those: T-004 and T-006 chain; T
 | T-029 | P5 | Multi-tenancy: tenant_id everywhere + per-tenant daily spend cap | M | T-026, T-028 | approved |
 | T-030 | P5 | Doc-intelligence endpoints: summary + sentiment with citations (eval: evaluator) | M | T-029 | approved |
 | T-031 | P5 | Cross-document comparison endpoint + evals (eval: evaluator) | M | T-030 | approved |
-| T-032 | P5 | /v1 versioning, OpenAPI spec, /health, CORS from env, docs off in prod | S | T-029 | approved |
+| T-032 | P5 | /v1 versioning, OpenAPI spec, /health, CORS from env, docs off in prod; now also CORS/Authorization/SSE-unbuffered browser checks | S | T-029 | approved |
 | T-033 | P5 | Dockerfile + staging(dev)/prod(main) deploy docs; deployer staging smoke | M | T-027, T-031, T-032 | approved |
+| T-034 | P5 | Anonymous token mint POST /v1/auth/anonymous, per-IP limit, demo caps, token_expired vs invalid_token (needs_architect) | M | T-028, T-029 | approved |
+| T-035 | P5 | GET /v1/sessions list + GET /v1/sessions/{id} messages (needs_architect) | S | T-026, T-028 | approved |
+| T-036 | P5 | Anonymous document/session TTL cleanup | S | T-027, T-034 | approved |
+| T-037 | P5 | Chunk-level Citation in agent stream events (needs_architect; eval: citation validity) | M | T-032 | approved |
+| T-038 | P6 | web/ scaffold: Vite+React+TS, tooling, pinned deps, verify command (needs_architect) | M | - | approved |
+| T-039 | P6 | Typed contract, API client, token module, MSW mock handlers | L | T-038 | approved |
+| T-040 | P6 | Documents page: upload, list, delete, per-file errors | M | T-039 | approved |
+| T-041 | P6 | SSE client + Chat page: steps, tokens, citations, stop reasons, abstain | L | T-039 | approved |
+| T-042 | P6 | Sessions list and switch | S | T-041 | approved |
+| T-043 | P6 | Safe rendering, CSP + vercel.json hardening, XSS component test | M | T-040, T-041 | approved |
+| T-044 | P6 | Playwright E2E in mock mode | M | T-042, T-043 | approved |
+| T-045 | P6 | Vercel preview deploy docs | S | T-043 | approved |
+| T-046 | P6 | Summary/Sentiment/Compare views behind flag (T-030/T-031/T-032 done) | L | T-041 | approved |
+| T-048 | P5 | Cited passage endpoint GET /v1/documents/{doc_id}/chunks/{chunk_id} for the source pane (needs_architect) | S | T-037 | approved |
+| T-047 | P6 | Switch to real API: generated client, contract check, staging smoke | M | T-044, T-045, T-048 | approved |
 
-Estimated total: 18 M x $4 + 5 S x $1.50 = $79.50 (caps, not expected spend).
+Estimated total: 25 M x $4 + 3 L x $8 + 9 S x $1.50 = $137.50 (caps, not expected spend). Previous total was $79.50; this plan adds $58.00 (P5 +4 tickets $11.00, P6 10 tickets $47.00).
 
 ## Later (not built)
 
-- Frontend (BLOCKED until all of P5 / T-033 is done)
+- Frontend is now P6 (T-038..T-047); backend enablers are T-034..T-037. Not in P6: login/signup, teams, billing, i18n, mobile, a markdown renderer (answers are plain pre-wrap text in v1), CSP report endpoint, Playwright in CI (human adds a job), Lighthouse/a11y audit beyond role/label tests, dark mode, cookie/BFF auth.
 - Dev/prod environments and containers (now P5: T-033)
 - Performance, safety and security testing (load tests, p95 measurement, pen tests)
 - Complex-document handling (OCR, scanned PDFs, complex tables)
@@ -78,9 +95,9 @@ Estimated total: 18 M x $4 + 5 S x $1.50 = $79.50 (caps, not expected spend).
 - Agent loop (T-016) must count tool LLM calls (summarize_document, compare_documents) against the per-run USD/token budget and pass settings.min_rerank_score into ToolContext; keep module state used by _run_async free of loop-bound objects.
 - query_table: no wall-clock timeout and pandas work is synchronous; consider asyncio.to_thread plus a timeout.
 - AGENT_MAX_TOKENS env var (currently constant 30000 in services/agent/graph.py); human adds it to .env.example (T-016 review).
-- Move agent stream citations to chunk-level `Citation` (page/sheet/span) before a frontend depends on the doc-level `{doc_id, filename, span}` shape (T-019 review).
+- Move agent stream citations to chunk-level `Citation` (page/sheet/span) before a frontend depends on the doc-level `{doc_id, filename, span}` shape (T-019 review). Now T-037.
 - T-020 (sessions): validate `session_id` before the stream opens, add a history param to `run_agent`, echo `session_id` in `final`.
 - T-022 (limits): rate-limit and spend-cap checks before the stream opens; record per-user spend from `final.usage`, including partial spend on disconnect.
 - T-021 re-review approved (round 2). Nits: link-opener floods (![]( repeated) cost up to ~120 ms per 20k call, lower the _IMAGE/_LINK target cap or short-circuit when no ) exists; tools.wrap can leave a harmless partial entity after truncation; homoglyph role words and plain-language social engineering remain known gaps.
-- T-022 follow-ups: per-IP rate limit (needs a trusted proxy); upload rate limit and stored-documents cap per owner; shared (Redis) limiter state for multi-worker.
+- T-022 follow-ups: per-IP rate limit (needs a trusted proxy; the mint limit in T-034 covers `/v1/auth/anonymous` only); upload rate limit and stored-documents cap per owner; shared (Redis) limiter state for multi-worker.
 - Security audit follow-ups (docs/security-audit.md): B-1 real auth; H-1 upload limits/quotas; H-2 streaming body-size middleware; H-3 zip/parse hardening and timeouts; H-4 CORS/security headers; H-5 disable docs/trim healthz in prod; M-3 fail closed on unknown model price; L-1 tracemalloc; L-2 delete load_xls; L-4 periodic session purge; L-5 pin HF model revisions.

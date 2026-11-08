@@ -1,0 +1,278 @@
+<title>DocChat Workspace</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: three panes (E): documents + conversations | chat (C) | source passage. Scope = ticked documents. */
+:root{
+  --bg:#eceeec; --panel:#ffffff; --side:#f3f4f2; --line:#dcdedb; --line-soft:#eceeeb;
+  --text:#1f2523; --muted:#5f6764; --faint:#8a928f;
+  --primary:#0f766e; --primary-ink:#ffffff; --primary-soft:#e3f1ee; --primary-text:#0b5d57;
+  --link:#2f6fe4; --link-soft:#e6eefc; --mark:#ffe9a8;
+  --warn:#8a5a00; --warn-soft:#fdf0d8; --ok:#0b5d57;
+  --r-sm:6px; --r-md:10px; --r-lg:16px;
+  --sans:'DM Sans',system-ui,-apple-system,'Segoe UI',sans-serif; --mono:'JetBrains Mono',ui-monospace,Menlo,monospace;
+}
+:root{color-scheme:light}
+
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);margin:0;font-size:14px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:16px 40px}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--link);outline-offset:2px}
+.shell{max-width:1320px;margin:0 auto}
+
+/* ---------- app frame ---------- */
+.app{display:grid;grid-template-columns:300px minmax(0,1fr) 340px;height:min(780px,calc(100dvh - 32px));min-height:560px;
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden}
+
+/* ---------- left: documents + conversations ---------- */
+.side{background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.brand{display:flex;justify-content:space-between;align-items:center;padding:14px 16px 10px}
+.brand b{font-size:17px;letter-spacing:-.01em;color:var(--primary-text)}
+.btn{border:1px solid var(--line);background:var(--panel);border-radius:var(--r-md);padding:6px 12px;font-weight:600;font-size:13px}
+.btn:hover{border-color:var(--primary)}
+.btn.primary{background:var(--primary);border-color:var(--primary);color:var(--primary-ink)}
+.btn.primary:hover{filter:brightness(1.08)}
+.sec{display:flex;justify-content:space-between;align-items:center;padding:12px 16px 4px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.linkbtn{border:0;background:none;padding:2px 4px;color:var(--link);font-size:12px;font-weight:600;letter-spacing:0;text-transform:none;border-radius:var(--r-sm)}
+.list{padding:2px 8px;display:flex;flex-direction:column;gap:2px}
+.docs{flex:0 0 auto}
+.convs{flex:1;overflow:auto;min-height:0}
+.doc{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:center;padding:8px;border-radius:var(--r-md);cursor:pointer}
+.doc:hover{background:var(--line-soft)}
+.doc.on{background:var(--primary-soft)}
+.doc input{width:16px;height:16px;margin:0;accent-color:var(--primary)}
+.doc.off{cursor:not-allowed;opacity:.75}
+.dname{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block}
+.dmeta{font-size:12px;color:var(--muted)}
+.pill{font-size:11px;font-weight:600;padding:1px 8px;border-radius:99px;white-space:nowrap}
+.pill.ok{background:var(--primary-soft);color:var(--primary-text)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.conv{width:100%;text-align:left;border:0;background:none;padding:8px 10px;border-radius:var(--r-md);display:flex;flex-direction:column;gap:1px}
+.conv:hover{background:var(--line-soft)}
+.conv[aria-current="true"]{background:var(--primary-soft)}
+.conv .t{font-weight:600}
+.conv .s{font-size:12px;color:var(--muted)}
+.foot{padding:10px 16px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+
+/* ---------- centre: chat ---------- */
+.chat{display:flex;flex-direction:column;min-width:0;min-height:0}
+.chead{padding:12px 20px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:2px}
+.chead h1{font-size:16px;margin:0;letter-spacing:-.01em}
+.scope{font-size:12.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scope b{color:var(--primary-text)}
+.thread{flex:1;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:16px;min-height:0}
+.msg-u{align-self:flex-end;max-width:min(560px,80%);background:var(--primary);color:var(--primary-ink);padding:9px 14px;border-radius:var(--r-lg) var(--r-lg) 4px var(--r-lg);overflow-wrap:anywhere}
+.msg-a{align-self:flex-start;max-width:min(640px,92%);display:flex;flex-direction:column;gap:8px}
+.bubble{background:var(--panel);border:1px solid var(--line);padding:11px 14px;border-radius:var(--r-lg) var(--r-lg) var(--r-lg) 4px;line-height:1.6;overflow-wrap:anywhere}
+.trace{font-size:12.5px;color:var(--muted)}
+.trace summary{cursor:pointer;border-radius:var(--r-sm);padding:2px 0}
+.trace ol{margin:6px 0 0;padding-left:0;list-style:none;border-left:2px solid var(--line);display:flex;flex-direction:column;gap:2px}
+.trace li{padding-left:10px;font-family:var(--mono);font-size:11.5px}
+.trace li.live::after{content:"";display:inline-block;width:6px;height:11px;margin-left:5px;background:var(--primary);vertical-align:-2px;animation:bl 1s steps(2) infinite}
+@keyframes bl{50%{opacity:0}}
+.cites{display:flex;flex-wrap:wrap;gap:6px}
+.cite{border:1px solid transparent;background:var(--link-soft);color:var(--link);border-radius:99px;padding:3px 10px;font-size:12px;font-weight:600}
+.cite:hover{border-color:var(--link)}
+.cite[aria-pressed="true"]{background:var(--link);color:var(--panel);}
+.stop{font-size:11.5px;color:var(--faint);font-family:var(--mono)}
+.note{align-self:center;font-size:12px;color:var(--muted);background:var(--side);border:1px solid var(--line);padding:3px 12px;border-radius:99px}
+.empty{margin:auto;max-width:44ch;text-align:center;color:var(--muted)}
+.empty b{display:block;color:var(--text);font-size:16px;margin-bottom:4px}
+.sugg{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:12px}
+.sugg button{border:1px solid var(--line);background:var(--panel);border-radius:99px;padding:5px 12px;font-size:12.5px}
+.sugg button:hover{border-color:var(--primary)}
+.compose{padding:12px 20px 16px;border-top:1px solid var(--line-soft)}
+.cbox{display:flex;gap:8px;align-items:flex-end;border:1px solid var(--line);border-radius:var(--r-lg);padding:6px 6px 6px 14px;background:var(--panel)}
+.cbox:focus-within{border-color:var(--primary);box-shadow:0 0 0 3px var(--primary-soft)}
+.cbox textarea{flex:1;border:0;outline:0;resize:none;background:none;color:var(--text);font:inherit;padding:6px 0;max-height:120px}
+.cbox textarea::placeholder{color:var(--faint)}
+.cbox .btn{border-radius:var(--r-md)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.hint{font-size:12px;color:var(--muted);margin:6px 4px 0;min-height:18px}
+
+/* ---------- right: source ---------- */
+.srcp{background:var(--side);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.srcp header{padding:14px 16px 10px;border-bottom:1px solid var(--line)}
+.srcp header h2{margin:0;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.srcbody{padding:16px;overflow:auto;flex:1}
+.srcname{font-weight:700;margin:0 0 2px}
+.srcref{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-bottom:12px}
+.page{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-sm);padding:14px 16px;font-size:13.5px;line-height:1.7;overflow-wrap:anywhere}
+mark{background:var(--mark);color:inherit;padding:1px 2px;border-radius:2px}
+.srcempty{color:var(--muted);font-size:13px;padding:8px 0}
+
+/* ---------- phone: one pane at a time ---------- */
+.tabs{display:none}
+@media (max-width:900px){
+  .app{grid-template-columns:1fr;height:calc(100dvh - 100px);min-height:480px}
+  .side,.chat,.srcp{display:none;border:0}
+  .app[data-view="docs"] .side,.app[data-view="chat"] .chat,.app[data-view="source"] .srcp{display:flex}
+  .tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-top:8px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-md);padding:4px}
+  .tabs button{border:0;background:none;padding:8px;border-radius:var(--r-sm);font-weight:600;color:var(--muted)}
+  .tabs button[aria-selected="true"]{background:var(--primary-soft);color:var(--primary-text)}
+}
+@media (prefers-reduced-motion:reduce){.trace li.live::after{animation:none}}
+
+/* ---------- design notes ---------- */
+.notes{max-width:1320px;margin:28px auto 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px 32px}
+.notes h3{margin:0 0 4px;font-size:13px}
+.notes p{margin:0;color:var(--muted);font-size:13px;line-height:1.55}
+.sw{display:flex;gap:6px;margin-top:8px}
+.sw i{width:22px;height:22px;border-radius:50%;border:1px solid var(--line);display:block}
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<div class="shell">
+  <div class="app" id="app" data-view="chat">
+    <aside class="side" aria-label="Documents and conversations">
+      <div class="brand"><b>DocChat</b><button class="btn primary" id="upload" type="button">Upload</button></div>
+      <div class="sec"><span>Documents</span><span><button class="linkbtn" id="all" type="button">All</button><button class="linkbtn" id="none" type="button">None</button></span></div>
+      <div class="list docs" id="docs"></div>
+      <div class="sec"><span>Conversations</span><button class="linkbtn" id="newchat" type="button">+ New</button></div>
+      <div class="list convs" id="convs"></div>
+      <div class="foot">Demo data resets in 24 hours.</div>
+    </aside>
+
+    <main class="chat">
+      <div class="chead"><h1 id="title"></h1><div class="scope" id="scope"></div></div>
+      <div class="thread" id="thread" role="log" aria-live="polite" aria-label="Conversation"></div>
+      <div class="compose">
+        <div class="cbox"><textarea id="q" rows="1" aria-label="Your question"></textarea><button class="btn primary" id="send" type="button">Send</button></div>
+        <div class="hint" id="hint"></div>
+      </div>
+    </main>
+
+    <aside class="srcp" aria-label="Source passage">
+      <header><h2>Source passage</h2></header>
+      <div class="srcbody" id="src"></div>
+    </aside>
+  </div>
+  <div class="tabs" role="tablist" aria-label="Panes" id="tabs">
+    <button role="tab" data-v="docs" aria-selected="false">Documents</button>
+    <button role="tab" data-v="chat" aria-selected="true">Chat</button>
+    <button role="tab" data-v="source" aria-selected="false">Source</button>
+  </div>
+
+  <div class="notes">
+    <div><h3>Scope is explicit</h3><p>Tick one or more documents on the left. The chat header, the placeholder and every answer's citations follow the ticks. Changing the ticks mid-conversation leaves a note in the thread, so earlier answers stay attributable.</p></div>
+    <div><h3>One conversation per question set</h3><p>Each conversation remembers its own document selection. Switching conversations restores it. Documents still indexing cannot be ticked yet.</p></div>
+    <div><h3>Evidence beside the answer</h3><p>Citation chips open the exact passage in the right pane with the cited characters highlighted. On a phone the three panes become tabs.</p></div>
+    <div><h3>Palette</h3><p>Teal carries every action and your own messages. Blue is reserved for citations and links. Amber marks highlighted evidence. Greys do the rest.</p>
+      <div class="sw"><i style="background:#0f766e"></i><i style="background:#2f6fe4"></i><i style="background:#ffe9a8"></i><i style="background:#f3f4f2"></i></div></div>
+  </div>
+</div>
+
+<script>
+const DOCS=[
+ {id:'d1',name:'Reservation Confirmation',ext:'PDF',pages:2,ready:true},
+ {id:'d2',name:'Things for travel',ext:'DOCX',pages:1,ready:true},
+ {id:'d3',name:'Visa and passport notes',ext:'PDF',pages:3,ready:true},
+ {id:'d4',name:'Itinerary',ext:'XLSX',pages:null,ready:false}
+];
+const byId=id=>DOCS.find(d=>d.id===id);
+const SRC={
+ d1:{page:1,range:'412–486',pre:'Guest welcome. Rooms are available from ',hit:'3:00 PM on the day of arrival. Check-out is 11:00 AM',post:'. Please present photo identification at the front desk. Early arrival cannot be guaranteed and luggage may be stored on request.'},
+ d2:{page:1,range:'90–171',pre:'Before you leave: ',hit:'bring a warm layer, a charger and photo ID. Weather can change quickly',post:' in the evenings, so check the forecast the night before.'},
+ d3:{page:2,range:'1204–1290',pre:'Entry requirements. ',hit:'Passports must be valid for six months beyond the travel dates',post:'. Visa processing takes about ten working days.'}
+};
+const SENT={
+ d1:'Check-in opens at 3:00 PM and check-out is 11:00 AM.',
+ d2:'Pack a warm layer, a charger and photo ID, since the weather can change quickly.',
+ d3:'Your passport must be valid for six months beyond the travel dates.'
+};
+const STEPS=n=>['router · document question','plan · search '+n+(n===1?' document':' documents'),'tool · search_chunks, 5 passages','grade · evidence is relevant','answer · groundedness check passed'];
+const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+function build(scope){const ids=scope.filter(i=>SENT[i]);return {text:ids.map(i=>SENT[i]).join(' '),cites:ids};}
+const S=[
+ {id:'s1',title:'Hotel check-in',scope:['d1','d2'],msgs:[
+   {r:'u',text:'What time is check-in, and what should I pack?'},
+   {r:'a',...build(['d1','d2']),meta:'done · 5 steps · 4.1 s · $0.004',steps:STEPS(2)}]},
+ {id:'s2',title:'Packing list',scope:['d2'],msgs:[
+   {r:'u',text:'Anything I should not forget?'},
+   {r:'a',...build(['d2']),meta:'done · 5 steps · 3.2 s · $0.003',steps:STEPS(1)}]}
+];
+let active='s1',openCite=null,running=false,n=3;
+const $=id=>document.getElementById(id);
+const cur=()=>S.find(s=>s.id===active);
+function h(tag,attrs,...kids){const e=document.createElement(tag);for(const k in(attrs||{})){if(k==='class')e.className=attrs[k];else if(k.startsWith('on'))e.addEventListener(k.slice(2),attrs[k]);else if(attrs[k]!==false&&attrs[k]!=null)e.setAttribute(k,attrs[k]===true?'':attrs[k]);}
+ kids.flat().forEach(c=>e.append(c instanceof Node?c:document.createTextNode(c)));return e;}
+const plural=(k,w)=>k+' '+w+(k===1?'':'s');
+
+function setView(v){$('app').dataset.view=v;document.querySelectorAll('#tabs button').forEach(b=>b.setAttribute('aria-selected',String(b.dataset.v===v)));}
+
+function renderDocs(){
+ const s=cur();$('docs').replaceChildren(...DOCS.map(d=>{
+  const on=s.scope.includes(d.id);
+  const cb=h('input',{type:'checkbox',id:'cb-'+d.id,checked:on,disabled:!d.ready,onchange:()=>toggle(d.id)});
+  cb.checked=on;
+  return h('label',{class:'doc'+(on?' on':'')+(d.ready?'':' off'),for:'cb-'+d.id},cb,
+   h('span',{},h('span',{class:'dname'},d.name),h('span',{class:'dmeta'},d.ext+(d.pages?' · '+plural(d.pages,'page'):''))),
+   h('span',{class:'pill '+(d.ready?'ok':'warn')},d.ready?'Ready':'Indexing'));}));
+}
+function renderConvs(){
+ $('convs').replaceChildren(...S.map(s=>h('button',{class:'conv',type:'button','aria-current':String(s.id===active),onclick:()=>{active=s.id;openCite=null;renderAll();setView('chat');}},
+  h('span',{class:'t'},s.title),h('span',{class:'s'},plural(s.scope.length,'document')+' · '+plural(s.msgs.filter(m=>m.r==='u').length,'question')))));
+}
+function scopeText(s){return s.scope.length?s.scope.map(i=>byId(i).name).join(', '):'No documents selected';}
+function renderHead(){const s=cur();$('title').textContent=s.title;
+ const sc=$('scope');sc.replaceChildren(s.scope.length?h('span',{},'Asking across ',h('b',{},plural(s.scope.length,'document')),': '+scopeText(s)):h('span',{},scopeText(s)));}
+function renderComposer(){
+ const s=cur(),none=!s.scope.length;
+ $('q').placeholder=none?'Select a document to start':'Ask about '+(s.scope.length===1?byId(s.scope[0]).name:plural(s.scope.length,'document'));
+ $('q').disabled=none||running;$('send').disabled=none||running;
+ $('hint').textContent=none?'Tick at least one ready document in the left pane.':running?'Reading your documents…':'Answers cite the passages they came from.';
+}
+function msgNode(m,i){
+ if(m.r==='u')return h('div',{class:'msg-u'},m.text);
+ if(m.r==='n')return h('div',{class:'note'},m.text);
+ const wrap=h('div',{class:'msg-a'});
+ if(m.steps){const d=h('details',{class:'trace',open:m.running}, h('summary',{},m.running?'Working…':'Searched '+plural(m.cites.length||1,'document')+' · '+m.meta),
+   h('ol',{},m.steps.slice(0,m.shown).map((t,k)=>h('li',{class:m.running&&k===m.shown-1&&m.shown<m.steps.length?'live':''},t))));wrap.append(d);}
+ if(m.words!=null||!m.running){const t=m.running?m.text.split(' ').slice(0,m.words).join(' '):m.text;if(t)wrap.append(h('div',{class:'bubble'},t));}
+ if(!m.running&&m.cites.length){wrap.append(h('div',{class:'cites'},m.cites.map(id=>h('button',{class:'cite',type:'button','aria-pressed':String(openCite===id),onclick:()=>{openCite=id;renderThread();renderSource();setView('source');}},byId(id).name+' · p.'+SRC[id].page))));
+  wrap.append(h('div',{class:'stop'},m.meta));}
+ return wrap;
+}
+function renderThread(keep){
+ const s=cur(),t=$('thread');
+ if(!s.msgs.length){t.replaceChildren(h('div',{class:'empty'},h('b',{},'Ask your first question'),'The answer will cite the passages it used from '+plural(s.scope.length,'selected document')+'.',
+  h('div',{class:'sugg'},['What are the key dates?','Summarise the requirements'].map(q=>h('button',{type:'button',onclick:()=>ask(q)},q)))));return;}
+ t.replaceChildren(...s.msgs.map(msgNode));if(!keep)t.scrollTop=t.scrollHeight;
+}
+function renderSource(){
+ const b=$('src');
+ if(!openCite){b.replaceChildren(h('p',{class:'srcempty'},'Choose a citation under an answer to read the passage it came from, with the cited text highlighted.'));return;}
+ const d=byId(openCite),x=SRC[openCite];
+ b.replaceChildren(h('p',{class:'srcname'},d.name),h('div',{class:'srcref'},'page '+x.page+' · characters '+x.range),
+  h('div',{class:'page'},'…'+x.pre,h('mark',{},x.hit),x.post+'…'));
+}
+function renderAll(){renderDocs();renderConvs();renderHead();renderComposer();renderThread();renderSource();}
+
+function toggle(id){
+ const s=cur(),had=s.scope.includes(id);
+ s.scope=had?s.scope.filter(x=>x!==id):[...s.scope,id].sort();
+ if(s.msgs.length&&!running)s.msgs.push({r:'n',text:'Scope changed: now '+plural(s.scope.length,'document')});
+ renderAll();
+}
+function sleep(ms){return new Promise(r=>setTimeout(r,reduce?0:ms));}
+async function ask(text){
+ const s=cur();text=(text||'').trim();if(!text||!s.scope.length||running)return;
+ running=true;const b=build(s.scope);
+ s.msgs.push({r:'u',text});
+ const m={r:'a',running:true,text:b.text,cites:b.cites,steps:STEPS(s.scope.length),shown:0,words:null,meta:'done · 5 steps · '+(2+s.scope.length*.8).toFixed(1)+' s · $0.00'+(2+s.scope.length)};
+ s.msgs.push(m);$('q').value='';renderAll();
+ for(let i=1;i<=m.steps.length;i++){m.shown=i;renderThread();await sleep(380);}
+ const words=m.text.split(' ');m.words=0;
+ for(let i=1;i<=words.length;i++){m.words=i;renderThread();await sleep(30);}
+ m.running=false;running=false;renderAll();
+}
+$('send').addEventListener('click',()=>ask($('q').value));
+$('q').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();ask($('q').value);}});
+$('all').addEventListener('click',()=>{const s=cur();s.scope=DOCS.filter(d=>d.ready).map(d=>d.id);if(s.msgs.length)s.msgs.push({r:'n',text:'Scope changed: now '+plural(s.scope.length,'document')});renderAll();});
+$('none').addEventListener('click',()=>{const s=cur();s.scope=[];renderAll();});
+$('newchat').addEventListener('click',()=>{const s=cur();S.unshift({id:'s'+(++n),title:'New conversation',scope:[...s.scope],msgs:[]});active=S[0].id;openCite=null;renderAll();setView('chat');$('q').focus();});
+$('upload').addEventListener('click',()=>{$('hint').textContent='Upload opens a file picker in the real app (PDF, DOCX, TXT, CSV, XLSX, 10 MB each).';});
+document.querySelectorAll('#tabs button').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.v)));
+openCite='d1';renderAll();
+</script>
