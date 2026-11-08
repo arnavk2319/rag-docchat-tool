@@ -39,7 +39,7 @@ def test_expired_token_401(client):
         auth.verify_token(tok, S, now=1010)
     old = auth.mint_token("alice", "t1", S, ttl_s=-5)
     r = client.get("/v1/documents", headers=hdr(old))
-    assert r.status_code == 401 and r.json()["code"] == "unauthorized"
+    assert r.status_code == 401 and r.json()["code"] == "token_expired"
 
 
 def test_tampered_and_wrong_secret_401(client):

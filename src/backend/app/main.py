@@ -5,8 +5,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.exceptions import HTTPException
 
-from .api import compare, docintel, documents, query, sessions, summarize
-from .api.deps import ApiError
+from .api import auth_anon, compare, docintel, documents, query, sessions, summarize
+from .api.deps import ApiError, demo_caps
 from .api.errors import http_error, install_error_handlers
 from .core.concurrency import run_blocking
 from .core.config import cors_origins, get_settings
@@ -86,7 +86,7 @@ async def lifespan(app: FastAPI):
             lambda: SpendLedger(
                 SqliteSpend(settings.db_path), settings.daily_usd_cap,
                 global_cap_usd=settings.global_daily_usd_cap,
-                tenant_cap_usd=settings.tenant_daily_usd_cap,
+                tenant_cap_usd=settings.tenant_daily_usd_cap, tenant_caps=demo_caps(settings),
             )
         )
         created.append("ledger")
@@ -150,6 +150,7 @@ def create_app() -> FastAPI:
     application.include_router(compare.router)
     application.include_router(query.router)
     application.include_router(sessions.router)
+    application.include_router(auth_anon.router)
     install_error_handlers(application, http_exception_handle_logging)
 
     @application.get("/health", tags=["health"])

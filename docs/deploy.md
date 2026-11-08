@@ -58,6 +58,10 @@ Secrets are set in the platform secret store, never in the repo or image. Human 
 | `MIN_RERANK_SCORE` | no (0.0) | abstain below this top rerank score |
 | `MAX_UPLOAD_MB` | no (10) | lowers the upload cap only |
 | `RATE_LIMIT_PER_MIN`, `GLOBAL_RATE_LIMIT_PER_MIN` | no (30, 120) | per-user and global |
+| `DEMO_TENANT_ID` | no (`demo`) | tenant of `POST /v1/auth/anonymous` tokens; must not be `default` (or other reserved ids) and must never equal any real tenant id: that tenant would inherit the demo caps |
+| `ANON_TOKEN_TTL_SECONDS`, `ANON_MINT_RATE_PER_HOUR` | no (3600, 10) | anonymous token lifetime; mints per client IP per hour |
+| `ANON_USER_DAILY_USD_CAP`, `ANON_TENANT_DAILY_USD_CAP` | no (0.10, 1.0) | daily USD caps per anonymous owner and for the whole demo tenant |
+| `TRUSTED_PROXY` | no (empty) | header name carrying the client IP (e.g. `X-Forwarded-For`; rightmost value used); empty = socket peer only, headers ignored. Set only behind a proxy that overwrites/appends it |
 | `DAILY_USD_CAP`, `GLOBAL_DAILY_USD_CAP` | no (1.0, 5.0) | per-user and global UTC-day spend caps, > 0 |
 | `AGENT_MAX_STEPS`, `AGENT_MAX_USD`, `SUMMARY_MAX_USD` | no | per-run bounds |
 | `SUMMARY_REDUCE_ROLE`, `SUMMARY_COMPRESS`, `SUMMARY_BATCH_CHARS`, `SUMMARY_MAX_BATCHES` | no | summarisation tuning |

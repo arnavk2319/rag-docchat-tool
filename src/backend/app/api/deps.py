@@ -16,6 +16,7 @@ from ..core.auth import (
     InMemoryKeyStore,
     KeyStore,
     Principal,
+    TokenExpired,
     valid_id,
     verify_api_key,
     verify_token,
@@ -76,8 +77,14 @@ def current_principal(
             tenant = verify_api_key(key_store, cred, secret)
             return Principal(tenant_id=tenant, owner_id=x_on_behalf_of)
         return verify_token(cred, secret)
+    except TokenExpired:
+        raise ApiError(
+            401, "token_expired", "Token expired", {"WWW-Authenticate": "Bearer"}
+        ) from None
     except AuthError:
-        raise _unauthorized() from None
+        raise ApiError(
+            401, "invalid_token", "Valid credentials are required", {"WWW-Authenticate": "Bearer"}
+        ) from None
 
 
 def current_user(principal: Annotated[Principal, Depends(current_principal)]) -> UserId:
@@ -152,13 +159,18 @@ def get_global_limiter(request: Request) -> RateLimiter:
     return st.global_limiter
 
 
+def demo_caps(s) -> dict[str, tuple[float, float]]:
+    """Demo-tenant (anonymous owners) per-user and tenant daily USD caps."""
+    return {s.demo_tenant_id: (s.anon_user_daily_usd_cap, s.anon_tenant_daily_usd_cap)}
+
+
 def get_ledger(request: Request) -> SpendLedger:
     st = request.app.state
     if getattr(st, "ledger", None) is None:
         s = get_settings()
         st.ledger = SpendLedger(
             SqliteSpend(s.db_path), s.daily_usd_cap, global_cap_usd=s.global_daily_usd_cap,
-            tenant_cap_usd=s.tenant_daily_usd_cap,
+            tenant_cap_usd=s.tenant_daily_usd_cap, tenant_caps=demo_caps(s),
         )
     return st.ledger
 

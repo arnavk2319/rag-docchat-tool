@@ -145,6 +145,7 @@ class SpendLedger:
         *,
         global_cap_usd: float = float("inf"),
         tenant_cap_usd: float = float("inf"),
+        tenant_caps: dict[str, tuple[float, float]] | None = None,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
@@ -152,6 +153,9 @@ class SpendLedger:
             raise ValueError("spend caps must be > 0")
         self._store, self.cap, self.global_cap = store, cap_usd, global_cap_usd
         self.tenant_cap = tenant_cap_usd
+        self.tenant_caps = dict(tenant_caps or {})  # tenant -> (per-user cap, tenant cap) overrides
+        if any(u <= 0 or t <= 0 for u, t in self.tenant_caps.values()):
+            raise ValueError("spend caps must be > 0")
         self._now, self._clock = now, clock
         self._held: dict[str, dict[str, tuple[float, float]]] = {}  # key -> id -> (usd, t)
         self._lock = threading.Lock()
@@ -175,13 +179,14 @@ class SpendLedger:
         With `tenant`, the user key is namespaced by it (same owner id in two tenants is two users)
         and the tenant's total is capped too."""
         tkey = None if tenant is None else tenant_key(tenant)
+        user_cap, tenant_cap = self.tenant_caps.get(tenant or "", (self.cap, self.tenant_cap))
         if tenant is not None:
             owner = f"{tenant}:{owner}"
         with self._lock:
             t, day = self._clock(), utc_day(self._now())
-            if self._over(owner, self.cap, t, day):
+            if self._over(owner, user_cap, t, day):
                 raise SpendCapError("user")
-            if tkey is not None and self._over(tkey, self.tenant_cap, t, day):
+            if tkey is not None and self._over(tkey, tenant_cap, t, day):
                 raise SpendCapError("tenant")
             if self._over(GLOBAL_KEY, self.global_cap, t, day):
                 raise SpendCapError("global")

@@ -1,9 +1,10 @@
 """Typed settings read from the process environment (no .env parsing here)."""
 
+import re
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # USD per 1M tokens: (input, output). Keyed by model id; unknown ids cost 0 and are logged.
@@ -11,6 +12,9 @@ DEFAULT_PRICES: dict[str, tuple[float, float]] = {
     "claude-sonnet-5-5": (3.0, 15.0),
     "claude-haiku-5-5": (1.0, 5.0),
 }
+
+
+RESERVED_TENANTS = {"default", "public", "system", "admin", "global", "*"}
 
 
 class Settings(BaseSettings):
@@ -57,6 +61,20 @@ class Settings(BaseSettings):
     session_max_messages: int = Field(default=20, ge=2, le=200)  # env SESSION_MAX_MESSAGES (10 turns)
     session_max_tokens: int = Field(default=2000, ge=100)  # env SESSION_MAX_TOKENS
     session_ttl_hours: float = Field(default=24.0, gt=0)  # env SESSION_TTL_HOURS (idle)
+
+    demo_tenant_id: str = "demo"  # env DEMO_TENANT_ID; tenant of anonymous tokens, never "default"
+    anon_token_ttl_seconds: int = Field(default=3600, gt=0)  # env ANON_TOKEN_TTL_SECONDS
+    anon_mint_rate_per_hour: int = Field(default=10, gt=0)  # env ANON_MINT_RATE_PER_HOUR (per IP)
+    anon_user_daily_usd_cap: float = Field(default=0.10, gt=0)  # env ANON_USER_DAILY_USD_CAP per anonymous owner
+    anon_tenant_daily_usd_cap: float = Field(default=1.0, gt=0)  # env ANON_TENANT_DAILY_USD_CAP whole demo tenant
+    trusted_proxy: str = ""  # env TRUSTED_PROXY: header carrying the client IP (e.g. X-Forwarded-For); empty = ignore headers
+
+    @field_validator("demo_tenant_id")
+    @classmethod
+    def _demo_tenant(cls, v: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9_.@-]{1,64}", v) or v.lower() in RESERVED_TENANTS:
+            raise ValueError("DEMO_TENANT_ID must be a valid tenant id and never 'default'")
+        return v
 
     cors_allow_origins: str = ""  # env CORS_ALLOW_ORIGINS, comma-separated exact origins; empty = no CORS
     enable_docs: bool = False  # env ENABLE_DOCS: /docs, /redoc, /openapi.json (+ detailed /healthz); off by default

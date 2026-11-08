@@ -1,6 +1,29 @@
 {
   "components": {
     "schemas": {
+      "AnonymousToken": {
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "expires_at": {
+            "title": "Expires At",
+            "type": "integer"
+          },
+          "token_type": {
+            "default": "bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "expires_at"
+        ],
+        "title": "AnonymousToken",
+        "type": "object"
+      },
       "Body_upload_documents_v1_documents_post": {
         "properties": {
           "files": {
@@ -811,6 +834,27 @@
         "summary": "Health",
         "tags": [
           "health"
+        ]
+      }
+    },
+    "/v1/auth/anonymous": {
+      "post": {
+        "operationId": "mint_anonymous_v1_auth_anonymous_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnonymousToken"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Mint Anonymous",
+        "tags": [
+          "auth"
         ]
       }
     },

@@ -29,6 +29,11 @@ class AuthError(Exception):
     """Any credential failure. Deliberately carries no reason (uniform 401, no oracle)."""
 
 
+class TokenExpired(AuthError):
+    """Signature-valid token past `exp` (only raised after the signature checks out, so a forger
+    learns nothing). Lets the client re-mint on expiry only."""
+
+
 @dataclass(frozen=True)
 class Principal:
     tenant_id: str
@@ -132,7 +137,7 @@ def verify_token(token: str, secret: str, now: float | None = None) -> Principal
         if not valid_id(sub) or not valid_id(tenant):
             raise AuthError
         if (time.time() if now is None else now) >= exp:
-            raise AuthError
+            raise TokenExpired
         return Principal(tenant_id=tenant, owner_id=sub)
     except AuthError:
         raise

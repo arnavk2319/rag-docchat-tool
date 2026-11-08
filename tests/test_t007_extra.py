@@ -116,6 +116,8 @@ def test_every_v1_route_requires_auth_and_health_does_not(client):
     for path, ops in spec.items():
         if not path.startswith("/v1"):
             continue
+        if path == "/v1/auth/anonymous":
+            continue  # public mint endpoint (rate limited per IP)
         for method in ops:
             url = path.replace("{doc_id}", "x")
             r = client.request(method.upper(), url)
@@ -137,7 +139,7 @@ def test_invalid_user_ids_rejected(client, uid):
     body = auth._b64(json.dumps({"sub": uid, "tenant_id": "t1", "iat": 0, "exp": 2**40}).encode())
     tok = f"v1.{body}.{auth._sig(TEST_SECRET, f'v1.{body}')}"
     r = client.get("/v1/documents", headers={"Authorization": f"Bearer {tok}"})
-    assert r.status_code == 401 and r.json()["code"] == "unauthorized"
+    assert r.status_code == 401 and r.json()["code"] == "invalid_token"
 
 
 # ---- owner isolation ----
