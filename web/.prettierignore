@@ -2,3 +2,6 @@ dist
 node_modules
 package-lock.json
 src/api/schema.d.ts
+dist-e2e
+test-results
+playwright-report

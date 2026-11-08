@@ -1,1 +1,4 @@
 public/mockServiceWorker.js
+dist-e2e
+test-results
+playwright-report

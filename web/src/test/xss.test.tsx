@@ -106,12 +106,10 @@ describe('session titles', () => {
     const { container } = render(<RouterProvider router={createTestRouter('/chat')} />)
     await screen.findByRole('checkbox')
     assertInert(container)
-    // TODO(T-042): once the sessions list exists, assert the title text node is found:
-    //   expect(await screen.findByText(raw)).toBeInTheDocument()
-    const hit = screen.queryAllByText(
-      (_c, el) => el?.textContent === raw || el?.textContent === shown,
+    const title = await screen.findByText(
+      (_c, el) => el?.tagName === 'SPAN' && (el.textContent === raw || el.textContent === shown),
     )
-    for (const el of hit) expect(el.children).toHaveLength(0)
+    expect(title.children).toHaveLength(0)
   })
 })
 

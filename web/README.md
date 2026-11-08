@@ -26,7 +26,7 @@ eslint-plugin-react-refresh 0.5.7, globals 17.14.0, prettier 3.9.10,
 Added in T-039 (exact): @tanstack/react-query 5.107.1, openapi-fetch 0.17.0 (runtime); openapi-typescript 7.13.0, msw 3.0.4 (dev).
 openapi-typescript declares peer `typescript@^5.x` while the repo uses 6.0.3, so `web/.npmrc` sets `legacy-peer-deps=true` (needed for `npm ci`). Remove it once openapi-typescript's peer range accepts TypeScript 6 (or if the repo pins TS 5.x).
 
-Deferred to later tickets (not installed here): @playwright/test.
+Added in T-044 (exact, dev): @playwright/test 1.65.0 (chromium only).
 
 ## API contract and mocks (T-039)
 
@@ -41,3 +41,18 @@ Deferred to later tickets (not installed here): @playwright/test.
 - CSP has no `unsafe-inline`/`unsafe-eval`; source must not use inline `style=` props or `.style` writes (tested). Use Tailwind classes.
 - Rendering rule: all model/user text is a React text node (ESLint bans HTML sinks; `src/test/xss.test.tsx` covers the payload matrix).
 - After `npm run build`, `npx vitest run src/test/vercel-config` also checks `dist/index.html` and the bundle for secrets. Loose `grep sk-` matches React's `mask-type`; the test uses key-shaped patterns.
+
+## E2E (T-044)
+
+```
+npx playwright install chromium   # once; browsers live in ~/Library/Caches/ms-playwright, never committed
+npm run test:e2e                  # builds dist-e2e with VITE_MOCK=1, serves it, runs chromium
+npm run test:e2e -- --repeat-each=3
+```
+
+Not part of `npm test`. `e2e/server.mjs` serves the mock build with the response headers of
+`gen-vercel-json.mjs --mock` (localhost origin), so the CSP is enforced in the browser; the shared fixture in
+`e2e/fixtures.ts` fails every test on any console error, page error or `securitypolicyviolation`
+(expected ones are declared per test via `allow.console`). Specs override handlers at runtime through the
+mock-only `window.__mock` seam (`src/mocks/browser.ts`; absent from the real build). No backend, localhost only.
+Production headers on Vercel are still verified by the T-043 config tests and T-045 preview.

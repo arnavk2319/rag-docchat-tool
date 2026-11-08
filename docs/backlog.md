@@ -65,7 +65,7 @@ P6 is mock-first: T-038..T-045 need no P5 work and can run in parallel with P5. 
 | T-041 | P6 | SSE client + Chat page: steps, tokens, citations, stop reasons, abstain | L | T-039 | done |
 | T-042 | P6 | Sessions list and switch | S | T-041 | done |
 | T-043 | P6 | Safe rendering, CSP + vercel.json hardening, XSS component test | M | T-040, T-041 | done |
-| T-044 | P6 | Playwright E2E in mock mode | M | T-042, T-043 | approved |
+| T-044 | P6 | Playwright E2E in mock mode | M | T-042, T-043 | done |
 | T-045 | P6 | Vercel preview deploy docs | S | T-043 | done |
 | T-046 | P6 | Summary/Sentiment/Compare views behind flag (T-030/T-031/T-032 done) | L | T-041 | approved |
 | T-048 | P5 | Cited passage endpoint GET /v1/documents/{doc_id}/chunks/{chunk_id} for the source pane (needs_architect) | S | T-037 | done |
@@ -109,3 +109,4 @@ Estimated total: 25 M x $4 + 3 L x $8 + 9 S x $1.50 = $137.50 (caps, not expecte
 - Stream events carry no session_id: T-042 must create the session explicitly (POST /v1/sessions) before the first question.
 - Sessions (T-042 review nits): aborting right after session create leaves an empty "New conversation" in the list; restored history has no citation chips (API stores only ids); no delete-conversation UI.
 - xss.test.tsx session-title positive assertion is a TODO(T-042): enable now that sessions are merged (picked up in T-044).
+- E2E mock limitation: GET /v1/sessions/:id returns 404 for sessions created during a run, so switching back shows not-found; make the mock store created sessions (T-044).
