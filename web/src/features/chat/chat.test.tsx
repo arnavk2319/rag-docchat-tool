@@ -186,6 +186,11 @@ describe('scope pruning', () => {
 
   it('drops unknown ids from a persisted per-session scope', async () => {
     const st = twoDocs()
+    server.use(
+      http.get('*/v1/sessions/sess-9', () =>
+        HttpResponse.json({ session_id: 'sess-9', messages: [] }),
+      ),
+    )
     sessionStorage.setItem('docchat.scope', JSON.stringify({ 'sess-9': ['doc-1', 'ghost'] }))
     app('/chat/sess-9')
     await waitFor(() =>
@@ -200,6 +205,11 @@ describe('scope pruning', () => {
     server.use(
       http.get('*/v1/documents', () =>
         HttpResponse.json({ detail: 'x', code: 'internal' }, { status: 500 }),
+      ),
+    )
+    server.use(
+      http.get('*/v1/sessions/sess-9', () =>
+        HttpResponse.json({ session_id: 'sess-9', messages: [] }),
       ),
     )
     sessionStorage.setItem('docchat.scope', JSON.stringify({ 'sess-9': ['doc-1'] }))

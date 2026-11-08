@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useReducer, useRef } from 'react'
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import type { Citation } from '../../api/contract'
 import { ApiError, GENERIC_MESSAGE } from '../../api/errors'
 import { StreamIncompleteError, streamQuery } from '../../api/sse'
+import { SESSIONS_KEY, useCreateSession, useSession } from '../sessions/hooks'
 import { useScope } from '../scope/ScopeContext'
 import AssistantMessage from './AssistantMessage'
 import Composer from './Composer'
@@ -11,16 +13,29 @@ const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
 
 export default function Chat({
   sessionId,
+  onSessionCreated,
+  onNewChat,
   activeChunkId,
   onOpenCitation,
 }: {
   sessionId?: string
+  /** Called after POST /v1/sessions succeeded on the first send of a new chat. */
+  onSessionCreated?: (id: string) => void
+  onNewChat?: () => void
   activeChunkId?: string
   onOpenCitation: (c: Citation) => void
 }) {
   const { selected, nameOf } = useScope()
   const [state, dispatch] = useReducer(reducer, initialState)
   const abortRef = useRef<AbortController | null>(null)
+  const busyRef = useRef(false)
+  const [restore, setRestore] = useState<{ n: number; text: string } | null>(null)
+  const qc = useQueryClient()
+  const createSession = useCreateSession()
+  // Session created by this very chat: its history is local, so never load it from the server.
+  const [own, setOwn] = useState<string | undefined>(undefined)
+  const loaded = useSession(sessionId, sessionId !== own)
+  const notFound = loaded.isError && loaded.error instanceof ApiError && loaded.error.status === 404
   const hasMessages = state.messages.length > 0
   const scopeKey = selected.join('|')
 
@@ -36,19 +51,35 @@ export default function Chat({
 
   useEffect(() => () => abortRef.current?.abort(), [])
 
+  const history = loaded.data
+  useEffect(() => {
+    if (history) dispatch({ type: 'load', messages: history.messages })
+  }, [history])
+
   const send = useCallback(
     async (question: string) => {
+      if (busyRef.current) return
+      busyRef.current = true
       const ac = new AbortController()
       abortRef.current = ac
       dispatch({ type: 'send', question })
       try {
+        let sid = sessionId
+        if (!sid) {
+          // SSE events carry no session_id, so the session is created explicitly first.
+          sid = (await createSession.mutateAsync()).session_id
+          setOwn(sid)
+          if (ac.signal.aborted) throw new Error('aborted')
+          onSessionCreated?.(sid)
+        }
         for await (const event of streamQuery(
-          { question, doc_ids: selected, session_id: sessionId },
+          { question, doc_ids: selected, session_id: sid },
           ac.signal,
         )) {
           dispatch({ type: 'event', event })
         }
         if (ac.signal.aborted) dispatch({ type: 'stopped' })
+        else void qc.invalidateQueries({ queryKey: SESSIONS_KEY })
       } catch (e) {
         if (ac.signal.aborted) dispatch({ type: 'stopped' })
         else {
@@ -57,11 +88,34 @@ export default function Chat({
               ? e.message
               : GENERIC_MESSAGE
           dispatch({ type: 'failed', message })
+          setRestore((r) => ({ n: (r?.n ?? 0) + 1, text: question }))
         }
+      } finally {
+        busyRef.current = false
       }
     },
-    [selected, sessionId],
+    [selected, sessionId, createSession, onSessionCreated, qc],
   )
+
+  if (notFound) {
+    return (
+      <section className="flex min-h-0 min-w-0 flex-col" aria-label="Chat">
+        <div role="alert" className="m-auto max-w-[44ch] text-center text-muted">
+          <b className="mb-1 block text-base text-text">Conversation not found</b>
+          It may have been deleted.
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={onNewChat}
+              className="rounded-md border border-line bg-panel px-3 py-1.5 font-semibold text-text"
+            >
+              New chat
+            </button>
+          </div>
+        </div>
+      </section>
+    )
+  }
 
   const noScope = selected.length === 0
   const first = selected.length === 1 ? nameOf(selected[0]) : undefined
@@ -140,6 +194,7 @@ export default function Chat({
         noScope={noScope}
         streaming={state.streaming}
         onSend={(q) => void send(q)}
+        restore={restore}
         onStop={() => abortRef.current?.abort()}
       />
     </section>

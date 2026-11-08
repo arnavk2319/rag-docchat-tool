@@ -10,6 +10,7 @@ export default function Composer({
   streaming,
   onSend,
   onStop,
+  restore,
 }: {
   placeholder: string
   hint: string
@@ -17,8 +18,15 @@ export default function Composer({
   streaming: boolean
   onSend: (q: string) => void
   onStop: () => void
+  /** A failed send hands its question back; applied once per `n` if the box is empty. */
+  restore?: { n: number; text: string } | null
 }) {
   const [text, setText] = useState('')
+  const [seen, setSeen] = useState(0)
+  if (restore && restore.n !== seen) {
+    setSeen(restore.n)
+    if (text === '') setText(restore.text)
+  }
   const trimmed = text.trim()
   const tooLong = trimmed.length > MAX_QUESTION
   const canSend = !noScope && !streaming && trimmed.length > 0 && !tooLong

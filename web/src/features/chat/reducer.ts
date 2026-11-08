@@ -46,6 +46,7 @@ export type Action =
   | { type: 'stopped' }
   | { type: 'failed'; message: string }
   | { type: 'note'; text: string }
+  | { type: 'load'; messages: { role: string; content: string }[] }
 
 export const initialState: ChatState = { messages: [], streaming: false, nextId: 1 }
 
@@ -105,6 +106,27 @@ export function reducer(s: ChatState, a: Action): ChatState {
         citations: [],
       }
       return { messages: [...s.messages, user, bot], streaming: true, nextId: s.nextId + 2 }
+    }
+    case 'load': {
+      // History is plain text only; citations are not reconstructed (the API stores ids only).
+      let id = 1
+      const messages: Msg[] = a.messages.flatMap((m): Msg[] => {
+        if (m.role === 'user') return [{ role: 'user', id: id++, text: m.content }]
+        if (m.role === 'assistant') {
+          return [
+            {
+              role: 'assistant',
+              id: id++,
+              status: 'done',
+              trace: [],
+              answer: m.content,
+              citations: [],
+            },
+          ]
+        }
+        return []
+      })
+      return { messages, streaming: false, nextId: id }
     }
     case 'note':
       return {

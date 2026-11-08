@@ -6,7 +6,9 @@ import type {
   DocumentOut,
   QueryRequest,
   QueryResponse,
+  SessionCreated,
   SessionList,
+  SessionListItem,
   SessionOut,
   UploadResponse,
   UploadResult,
@@ -29,11 +31,13 @@ export const MINT_ROUTE = '*/v1/auth/anonymous'
 
 let documents: DocumentOut[] = initialDocuments()
 let counter = 0
+let sessionRows: SessionListItem[] = [...sessions]
 
 /** Test helper: restore the in-memory mock state. */
 export function resetMockState(): void {
   documents = initialDocuments()
   counter = 0
+  sessionRows = [...sessions]
 }
 
 const fail = (filename: string, code: string): UploadResult => ({
@@ -119,9 +123,26 @@ export const handlers = [
     return HttpResponse.json(body)
   }),
 
-  http.get('*/v1/sessions', () => {
-    const body: SessionList = { items: sessions, total: sessions.length }
+  http.get('*/v1/sessions', ({ request }) => {
+    const url = new URL(request.url)
+    const limit = Number(url.searchParams.get('limit') ?? 50)
+    const offset = Number(url.searchParams.get('offset') ?? 0)
+    const body: SessionList = {
+      items: sessionRows.slice(offset, offset + limit),
+      total: sessionRows.length,
+    }
     return HttpResponse.json(body)
+  }),
+
+  http.post('*/v1/sessions', () => {
+    const row: SessionListItem = {
+      session_id: `sess-new-${++counter}`,
+      title: 'New conversation',
+      updated_at: new Date().toISOString(),
+    }
+    sessionRows = [row, ...sessionRows]
+    const body: SessionCreated = { session_id: row.session_id }
+    return HttpResponse.json(body, { status: 201 })
   }),
 
   http.get('*/v1/sessions/:sessionId', ({ params }) => {

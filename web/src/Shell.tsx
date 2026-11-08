@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { useLocation, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import type { Citation } from './api/contract'
 import Chat from './features/chat/Chat'
 import { DocumentsPanel } from './features/documents/DocumentsPanel'
 import { ScopeProvider, useScope } from './features/scope/ScopeContext'
+import { SessionList } from './features/sessions/SessionList'
 import SourcePane from './features/source/SourcePane'
 import { useNarrow } from './useNarrow'
 
@@ -19,6 +20,18 @@ function Workspace({ sessionId, initialView }: { sessionId?: string; initialView
   const scope = useScope()
   const [view, setView] = useState<View>(initialView)
   const [citation, setCitation] = useState<Citation | null>(null)
+  const nav = useNavigate()
+  // Chat remounts on a user-driven switch (aborting any stream) but not when the route merely
+  // adopts the session this chat just created.
+  const [inst, setInst] = useState({ key: 0, sid: sessionId, own: undefined as string | undefined })
+  if (sessionId !== inst.sid) {
+    const adopted = sessionId !== undefined && sessionId === inst.own
+    setInst({
+      key: adopted ? inst.key : inst.key + 1,
+      sid: sessionId,
+      own: adopted ? inst.own : undefined,
+    })
+  }
 
   const left = (
     <aside
@@ -35,13 +48,19 @@ function Workspace({ sessionId, initialView }: { sessionId?: string; initialView
           onSelectAll={scope.selectAll}
           onClear={scope.clear}
         />
+        <SessionList activeId={sessionId} />
       </div>
     </aside>
   )
   const chat = (
     <Chat
-      key={sessionId ?? 'new'}
+      key={inst.key}
       sessionId={sessionId}
+      onSessionCreated={(id) => {
+        setInst((i) => ({ ...i, own: id }))
+        void nav(`/chat/${encodeURIComponent(id)}`, { replace: true })
+      }}
+      onNewChat={() => void nav('/chat')}
       activeChunkId={citation?.chunk_id}
       onOpenCitation={(c) => {
         setCitation(c)
