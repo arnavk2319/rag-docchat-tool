@@ -34,3 +34,10 @@ Deferred to later tickets (not installed here): @playwright/test.
 - `src/api/contract.ts` re-exports named types plus the SSE event union (SSE is not in OpenAPI).
 - `src/auth/token.ts` owns the token (sessionStorage), mint endpoint and header; `src/api/client.ts` adds auth and the 401 re-mint-once logic.
 - Mock mode: `npm run dev:mock` / `npm run build:mock` copy the MSW worker into `public/` (git-ignored) and set `VITE_MOCK=1`. Plain `npm run build` deletes it first so no mock code ships. Mock question keywords select SSE scenarios: `abstained`, `max_steps`, `max_tokens`, `max_usd`, `error`; default is `done`.
+
+## Security headers and CSP (T-043)
+
+- `vercel.json` is generated: `API_ORIGIN=https://api.example.com npm run gen:vercel` (add `-- --mock` for the mock/demo build, which only adds `worker-src 'self'`). The committed file uses the placeholder `https://api.docchat.example`; **before deploy, run the script with the real staging backend origin and commit the result** (a test keeps the committed file in sync with the generator for the placeholder). The origin must be a bare https origin; wildcards and paths are rejected.
+- CSP has no `unsafe-inline`/`unsafe-eval`; source must not use inline `style=` props or `.style` writes (tested). Use Tailwind classes.
+- Rendering rule: all model/user text is a React text node (ESLint bans HTML sinks; `src/test/xss.test.tsx` covers the payload matrix).
+- After `npm run build`, `npx vitest run src/test/vercel-config` also checks `dist/index.html` and the bundle for secrets. Loose `grep sk-` matches React's `mask-type`; the test uses key-shaped patterns.
