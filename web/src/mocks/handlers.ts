@@ -1,6 +1,7 @@
 import { http, HttpResponse } from 'msw'
 import type {
   AnonymousToken,
+  Citation,
   ChunkPassage,
   DocumentList,
   DocumentOut,
@@ -22,6 +23,7 @@ import {
   sessions,
 } from './fixtures'
 import { sseResponse } from './sse'
+import type { CompareResponse, DocSentiment, DocSummary } from '../features/docintel/types'
 
 const err = (status: number, code: string, detail = code) =>
   HttpResponse.json({ detail, code }, { status })
@@ -49,7 +51,80 @@ const fail = (filename: string, code: string): UploadResult => ({
 
 const ALLOWED = /\.(pdf|docx|txt|csv|xlsx)$/i
 
+// --- doc-intel mock block (T-046): summary, sentiment, compare ---
+const intelCitation = (d: DocumentOut): Citation => ({
+  doc_id: d.doc_id,
+  filename: d.filename,
+  chunk_id: `${d.doc_id}:1:0`,
+  page: 1,
+  sheet: null,
+  span: { char_start: 0, char_end: 42 },
+})
+
+/** 404 unknown, 409 not_ready; otherwise the document. */
+function intelDoc(id: string): DocumentOut | Response {
+  const d = documents.find((x) => x.doc_id === id)
+  if (!d) return err(404, 'not_found')
+  if (d.status !== 'ready') return err(409, 'not_ready')
+  return d
+}
+
+export const docIntelHandlers = [
+  http.post('*/v1/documents/:docId/summary', ({ params }) => {
+    const d = intelDoc(String(params.docId))
+    if (d instanceof Response) return d
+    const body: DocSummary = {
+      doc_id: d.doc_id,
+      summary: `Summary of ${d.filename}: revenue grew steadily and costs stayed flat.`,
+      citations: [intelCitation(d)],
+      partial: false,
+      abstained: false,
+    }
+    return HttpResponse.json(body)
+  }),
+
+  http.post('*/v1/documents/:docId/sentiment', ({ params }) => {
+    const d = intelDoc(String(params.docId))
+    if (d instanceof Response) return d
+    const body: DocSentiment = {
+      doc_id: d.doc_id,
+      label: 'positive',
+      confidence: 0.82,
+      rationale: `The tone of ${d.filename} is optimistic about growth.`,
+      citations: [intelCitation(d)],
+      partial: false,
+      abstained: false,
+    }
+    return HttpResponse.json(body)
+  }),
+
+  http.post('*/v1/compare', async ({ request }) => {
+    const b = (await request.json()) as { doc_ids?: string[]; focus?: string }
+    const ids = b.doc_ids ?? []
+    if (ids.length < 2 || ids.length > 5) return err(422, 'validation_error')
+    const found: DocumentOut[] = []
+    for (const id of ids) {
+      const d = intelDoc(id)
+      if (d instanceof Response) return d
+      found.push(d)
+    }
+    const body: CompareResponse = {
+      doc_ids: ids,
+      similarities: [
+        { point: 'Both documents report revenue.', citations: found.map(intelCitation) },
+      ],
+      differences: [
+        { point: `${found[0].filename} covers 2025 only.`, citations: [intelCitation(found[0])] },
+      ],
+      partial: false,
+      abstained: false,
+    }
+    return HttpResponse.json(body)
+  }),
+]
+
 export const handlers = [
+  ...docIntelHandlers,
   http.post(MINT_ROUTE, () => {
     const body: AnonymousToken = {
       access_token: `mock-token-${++counter}`,

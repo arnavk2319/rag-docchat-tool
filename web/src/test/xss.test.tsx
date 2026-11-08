@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { http, HttpResponse } from 'msw'
 import { RouterProvider } from 'react-router-dom'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createTestRouter } from '../App'
 import type { StreamEvent } from '../api/contract'
 import { initialDocuments, MOCK_RUN_ID, sessions } from '../mocks/fixtures'
@@ -139,5 +139,74 @@ describe('model URLs', () => {
     const answer = await screen.findByTestId('answer')
     expect(answer.textContent).toContain('https://evil.example/a')
     expect(container.querySelector('a, [href], [src]')).toBeNull()
+  })
+})
+
+// The backend (sanitize_output) escapes & < > exactly once; the UI decodes once, renders text only.
+const ESCAPED: [string, string, string][] = [
+  ['img onerror', '&lt;img src=x onerror=alert(1)&gt;', '<img src=x onerror=alert(1)>'],
+  ['script tag', '&lt;script&gt;alert(1)&lt;/script&gt;', '<script>alert(1)</script>'],
+  ['svg onload', '&lt;svg onload=alert(1)&gt;', '<svg onload=alert(1)>'],
+  ['ampersand', 'R&amp;D', 'R&D'],
+  ['double-encoded', '&amp;lt;script&amp;gt;', '&lt;script&gt;'],
+]
+
+describe('doc-intel results are text only', () => {
+  it.each(ESCAPED)('summary, sentiment and compare render %s as text', async (_n, sent, shown) => {
+    vi.stubEnv('VITE_FEATURE_DOC_INTEL', '1')
+    const cit = {
+      doc_id: 'doc-1',
+      filename: 'annual-report.pdf',
+      chunk_id: 'doc-1:1:0',
+      page: 1,
+      sheet: null,
+      span: { char_start: 0, char_end: 4 },
+    }
+    server.use(
+      http.get('*/v1/documents', () => {
+        const [a] = initialDocuments()
+        return HttpResponse.json({
+          items: [a, { ...a, doc_id: 'doc-2', filename: 'b.pdf' }],
+          total: 2,
+        })
+      }),
+      http.post('*/v1/documents/:id/summary', () =>
+        HttpResponse.json({ doc_id: 'doc-1', summary: sent, citations: [cit] }),
+      ),
+      http.post('*/v1/documents/:id/sentiment', () =>
+        HttpResponse.json({
+          doc_id: 'doc-1',
+          label: 'neutral',
+          confidence: 0.5,
+          rationale: sent,
+          citations: [cit],
+        }),
+      ),
+      http.post('*/v1/compare', () =>
+        HttpResponse.json({
+          doc_ids: ['doc-1', 'doc-2'],
+          similarities: [{ point: sent, citations: [cit] }],
+          differences: [{ point: sent, citations: [] }],
+        }),
+      ),
+    )
+    for (const [path, btn] of [
+      ['/summary', 'Run summary'],
+      ['/sentiment', 'Run sentiment'],
+      ['/compare', 'Run compare'],
+    ]) {
+      const { container, unmount } = render(<RouterProvider router={createTestRouter(path)} />)
+      await userEvent.click(await screen.findByRole('checkbox', { name: /annual-report/ }))
+      await userEvent.click(screen.getByRole('checkbox', { name: /b\.pdf/ }))
+      await userEvent.click(screen.getByRole('button', { name: btn }))
+      const hits = await screen.findAllByText(shown)
+      for (const h of hits) expect(h.textContent).toBe(shown)
+      const view = container.querySelector('[data-testid^="intel-"]')!
+      expect(
+        view.querySelector('script, img, svg, iframe, a[href], [onerror], [onload]'),
+      ).toBeNull()
+      unmount()
+    }
+    vi.unstubAllEnvs()
   })
 })

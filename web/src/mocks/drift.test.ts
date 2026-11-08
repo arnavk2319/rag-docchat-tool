@@ -68,6 +68,36 @@ describe('mock responses match docs/openapi.json (runtime)', () => {
     assertSchema('SessionOut', await json(await get('/v1/sessions/sess-1')))
   })
 
+  it('doc-intel: summary, sentiment, compare and their error bodies', async () => {
+    const post = (p: string, body?: object) =>
+      fetch(`${o}${p}`, {
+        method: 'POST',
+        headers: { ...H, 'Content-Type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined,
+      })
+    assertSchema('DocSummaryResponse', await json(await post('/v1/documents/doc-1/summary')))
+    assertSchema('DocSentimentResponse', await json(await post('/v1/documents/doc-1/sentiment')))
+    const up = multipart([{ name: 'b.txt', content: 'hello' }])
+    await fetch(`${o}/v1/documents`, {
+      method: 'POST',
+      headers: { ...H, ...up.headers },
+      body: up.body,
+    })
+    const ids = ((await json(await get('/v1/documents'))) as C.DocumentList).items
+      .slice(0, 2)
+      .map((d) => d.doc_id)
+    assertSchema('CompareResponse', await json(await post('/v1/compare', { doc_ids: ids })))
+    for (const r of [
+      await post('/v1/documents/nope/summary'),
+      await post('/v1/documents/nope/sentiment'),
+      await post('/v1/compare', { doc_ids: ['nope', 'x'] }),
+      await post('/v1/compare', { doc_ids: ['a'] }),
+    ]) {
+      expect(r.ok).toBe(false)
+      assertSchema('ErrorBody', await json(r))
+    }
+  })
+
   it('non-stream query, abstained and answered', async () => {
     for (const question of ['revenue?', 'please abstained']) {
       const r = await fetch(`${o}/v1/query`, {

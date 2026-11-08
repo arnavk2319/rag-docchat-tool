@@ -2,6 +2,9 @@ import { useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import type { Citation } from './api/contract'
 import Chat from './features/chat/Chat'
+import DocIntelView, { IntelNav } from './features/docintel/DocIntelView'
+import { docIntelEnabled } from './features/docintel/flag'
+import type { IntelKind } from './features/docintel/flag'
 import { DocumentsPanel } from './features/documents/DocumentsPanel'
 import { ScopeProvider, useScope } from './features/scope/ScopeContext'
 import { SessionList } from './features/sessions/SessionList'
@@ -15,7 +18,15 @@ const TABS: { v: View; label: string }[] = [
   { v: 'source', label: 'Source' },
 ]
 
-function Workspace({ sessionId, initialView }: { sessionId?: string; initialView: View }) {
+function Workspace({
+  sessionId,
+  initialView,
+  intel,
+}: {
+  sessionId?: string
+  initialView: View
+  intel?: IntelKind
+}) {
   const narrow = useNarrow()
   const scope = useScope()
   const [view, setView] = useState<View>(initialView)
@@ -23,12 +34,16 @@ function Workspace({ sessionId, initialView }: { sessionId?: string; initialView
   const nav = useNavigate()
   // Chat remounts on a user-driven switch (aborting any stream) but not when the route merely
   // adopts the session this chat just created.
-  const [inst, setInst] = useState({ key: 0, sid: sessionId, own: undefined as string | undefined })
-  if (sessionId !== inst.sid) {
-    const adopted = sessionId !== undefined && sessionId === inst.own
+  // Chat stays mounted (hidden) while an intel view shows, so remember its session.
+  const [chatSid, setChatSid] = useState(sessionId)
+  if (!intel && sessionId !== chatSid) setChatSid(sessionId)
+  const sid = intel ? chatSid : sessionId
+  const [inst, setInst] = useState({ key: 0, sid: sid, own: undefined as string | undefined })
+  if (sid !== inst.sid) {
+    const adopted = sid !== undefined && sid === inst.own
     setInst({
       key: adopted ? inst.key : inst.key + 1,
-      sid: sessionId,
+      sid: sid,
       own: adopted ? inst.own : undefined,
     })
   }
@@ -52,21 +67,34 @@ function Workspace({ sessionId, initialView }: { sessionId?: string; initialView
       </div>
     </aside>
   )
-  const chat = (
+  const openCitation = (c: Citation) => {
+    setCitation(c)
+    setView('source')
+  }
+  const chatPane = (
     <Chat
       key={inst.key}
-      sessionId={sessionId}
+      sessionId={sid}
       onSessionCreated={(id) => {
         setInst((i) => ({ ...i, own: id }))
-        void nav(`/chat/${encodeURIComponent(id)}`, { replace: true })
+        if (intel) setChatSid(id)
+        else void nav(`/chat/${encodeURIComponent(id)}`, { replace: true })
       }}
       onNewChat={() => void nav('/chat')}
       activeChunkId={citation?.chunk_id}
-      onOpenCitation={(c) => {
-        setCitation(c)
-        setView('source')
-      }}
+      onOpenCitation={openCitation}
     />
+  )
+  const chat = docIntelEnabled() ? (
+    <div className="flex min-h-0 min-w-0 flex-col">
+      <IntelNav chatPath={sid ? `/chat/${encodeURIComponent(sid)}` : '/chat'} />
+      <div className={intel ? 'hidden' : 'flex min-h-0 flex-1 flex-col [&>section]:flex-1'}>
+        {chatPane}
+      </div>
+      {intel && <DocIntelView key={intel} kind={intel} onOpenCitation={openCitation} />}
+    </div>
+  ) : (
+    chatPane
   )
   const source = <SourcePane citation={citation} />
 
@@ -121,10 +149,14 @@ function Workspace({ sessionId, initialView }: { sessionId?: string; initialView
 export default function Shell() {
   const { sessionId } = useParams()
   const { pathname } = useLocation()
+  const intel = docIntelEnabled()
+    ? (['summary', 'sentiment', 'compare'] as const).find((k) => pathname === `/${k}`)
+    : undefined
   return (
     <ScopeProvider sessionId={sessionId}>
       <Workspace
         sessionId={sessionId}
+        intel={intel}
         initialView={pathname.startsWith('/documents') ? 'docs' : 'chat'}
       />
     </ScopeProvider>

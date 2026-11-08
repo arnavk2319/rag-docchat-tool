@@ -20,7 +20,7 @@
     "dev:mock": "msw init public --no-save && VITE_MOCK=1 vite",
     "build:mock": "msw init public --no-save && tsc --noEmit && VITE_MOCK=1 vite build",
     "prebuild": "rm -f public/mockServiceWorker.js",
-    "build:e2e": "msw init public --no-save && tsc --noEmit && VITE_MOCK=1 vite build --outDir dist-e2e --emptyOutDir",
+    "build:e2e": "msw init public --no-save && tsc --noEmit && VITE_MOCK=1 VITE_FEATURE_DOC_INTEL=1 vite build --outDir dist-e2e --emptyOutDir",
     "test:e2e": "playwright test"
   },
   "dependencies": {
