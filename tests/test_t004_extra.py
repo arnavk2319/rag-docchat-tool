@@ -16,6 +16,7 @@ from app.core import models
 from app.core.concurrency import run_blocking
 from app.core.config import Settings, get_settings
 from app.utilities import file_handler as fh
+from authutil import bearer
 from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -411,7 +412,7 @@ def test_file_handler_import_no_side_effects(tmp_path):
     assert res.returncode == 0, res.stderr[-800:]
 
 
-# ---------- upload e2e (real app, fake models, tmp registry + Chroma) ----------
+# ---------- upload e2e (real app, fake models, in-memory registry + vectors) ----------
 
 
 @pytest.fixture
@@ -425,7 +426,7 @@ def app_client(tmp_path, monkeypatch):
 
 
 def _up(c, name, data):
-    r = c.post("/v1/documents", files={"files": (name, data)}, headers={"X-User-Id": "u1"})
+    r = c.post("/v1/documents", files={"files": (name, data)}, headers=bearer("u1"))
     assert r.status_code == 200, r.text
     return r.json()["results"][0]
 

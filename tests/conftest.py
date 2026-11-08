@@ -6,6 +6,8 @@ import pytest
 
 os.environ["LLM_PROVIDER"] = "mock"
 os.environ["MODELS_FAKE"] = "1"
+os.environ["AUTH_TOKEN_SECRET"] = "test-fixture-secret-0123456789-abcdefghij"
+os.environ["ENABLE_DOCS"] = "true"
 os.environ.pop("ANTHROPIC_API_KEY", None)
 
 _LOCAL = {"localhost", "127.0.0.1", "::1", ""}
@@ -59,6 +61,7 @@ def _fresh_settings():
 
 @pytest.fixture(autouse=True)
 def _tmp_storage(tmp_path, monkeypatch):
-    """App lifespan creates registry + Chroma; keep them out of the repo."""
-    monkeypatch.setenv("CHROMA_DIR", str(tmp_path / "chroma"))
+    """App lifespan creates the parents SQLite file; keep it out of the repo; force in-memory mode."""
+    monkeypatch.delenv("DATABASE_URL", raising=False)
     monkeypatch.setenv("DB_PATH", str(tmp_path / "db" / "docchat.db"))
+    monkeypatch.setenv("OBJECT_STORE_PATH", str(tmp_path / "objects"))

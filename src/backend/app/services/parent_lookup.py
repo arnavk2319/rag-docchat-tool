@@ -6,8 +6,8 @@ from collections.abc import Sequence
 
 from pydantic import BaseModel
 
-from app.store.chroma import Hit
 from app.store.parents import Parent, SqliteParents
+from app.vectorstore.sync import Hit
 
 
 class ParentHit(BaseModel):

@@ -9,10 +9,11 @@ from app.core import llm
 from app.core.limits import RateLimiter, SpendCapError, SpendLedger
 from app.main import app
 from app.store.spend import SqliteSpend
+from authutil import bearer
 from fastapi.testclient import TestClient
 
-A = {"X-User-Id": "alice"}
-B = {"X-User-Id": "bob"}
+A = bearer("alice")
+B = bearer("bob")
 J = llm.mock_script
 
 
@@ -181,7 +182,7 @@ def test_daily_cap_blocks_before_llm_call(monkeypatch):
         did = doc(c)
         r = c.post("/v1/query", json={"question": "sky?"}, headers=A)
         assert r.status_code == 200
-        spent = c.app.state.ledger._store.spent("alice", datetime.now(UTC).strftime("%Y-%m-%d"))
+        spent = c.app.state.ledger._store.spent("default:alice", datetime.now(UTC).strftime("%Y-%m-%d"))
         assert spent > 0  # recorded from actual usage
         calls = []
         real = llm.complete
@@ -208,7 +209,7 @@ def test_stream_records_spend_and_releases(monkeypatch):
         r = c.post("/v1/query", json={"question": "sky?", "stream": True}, headers=A)
         assert r.status_code == 200 and '"usd":0.0}' not in r.text
         day = datetime.now(UTC).strftime("%Y-%m-%d")
-        assert c.app.state.ledger._store.spent("alice", day) > 0
+        assert c.app.state.ledger._store.spent("default:alice", day) > 0
         assert c.app.state.ledger.reserved("alice") == 0
 
 
@@ -314,7 +315,7 @@ def test_llm_failures_release_lease_uncharged(monkeypatch):
         J(llm.LLMTransportError(400, "x"))
         assert c.post("/v1/summarize", json={"doc_id": did}, headers=A).status_code == 502
         assert reserved(c, "alice") == 0 and reserved(c, "*") == 0
-        assert c.app.state.ledger._store.spent("alice", day) == 0
+        assert c.app.state.ledger._store.spent("default:alice", day) == 0
 
 
 def test_429_headers_on_stream_and_summarize(monkeypatch):
@@ -333,7 +334,7 @@ def test_global_rate_limit_and_spend_codes(monkeypatch):
         doc(c)  # uploads are not limited
         assert c.post("/v1/query", json={"question": "q"}, headers=A).status_code == 200
         assert c.post("/v1/query", json={"question": "q"}, headers=B).status_code == 200
-        r = c.post("/v1/query", json={"question": "q"}, headers={"X-User-Id": "carol"})
+        r = c.post("/v1/query", json={"question": "q"}, headers=bearer("carol"))
         assert r.status_code == 429 and r.json()["code"] == "global_rate_limited"
         assert int(r.headers["retry-after"]) >= 1
 

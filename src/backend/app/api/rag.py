@@ -6,9 +6,9 @@ from typing import Any
 from ..core.concurrency import run_blocking
 from ..core.models import get_models
 from ..core.security import sanitize_untrusted
-from ..store.chroma import Hit
 from ..store.parents import SqliteParents
 from ..store.registry import Document, Registry
+from ..vectorstore.sync import Hit
 from .deps import ApiError
 from .schemas import Citation, Span
 

@@ -46,6 +46,7 @@ class AgentState(TypedDict, total=False):
     next: str  # plan decision: tool | final
     pending: dict[str, Any]  # requested tool call
     tool_calls: int
+    surfaced_chunks: dict[str, str]  # chunk_id -> doc_id, from tool code (never parsed from text)
     surfaced: dict[str, str]  # doc_id -> span, from tool code (never parsed from text)
     rewrites: int  # rewrite loops used (<= MAX_REWRITES)
     rewrite: str  # rewritten search query (LLM output: untrusted data)
@@ -188,22 +189,26 @@ async def tool(state: AgentState, d: Deps) -> AgentState:
     name, args = req.get("tool", ""), req.get("args", {})
     hist = list(state.get("history", []))
     surfaced = dict(state.get("surfaced", {}))
+    chunks = dict(state.get("surfaced_chunks", {}))
     if not isinstance(name, str) or name not in TOOLS:  # allow-list; still counts as a step
         result = "<tool_result status=\"error\">\nunknown tool\n</tool_result>"
         name = escape(str(name))[:60]
     else:
         # run_tool is sync, never raises, escapes + wraps output. owner_id comes only from ctx;
         # model-supplied args are validated (extra=forbid), so an owner_id arg is rejected.
-        call_ctx = replace(d.ctx, surfaced={})  # per-call dict: no shared mutable state across runs
+        # per-call dicts: no shared mutable state across runs
+        call_ctx = replace(d.ctx, surfaced={}, surfaced_chunks={})
         result = await asyncio.to_thread(run_tool, name, args, call_ctx)
         if _ok(result):
             surfaced.update(call_ctx.surfaced)
+            chunks.update(call_ctx.surfaced_chunks)
     hist.append({"tool": name, "args": json.dumps(args, default=str)[:ARGS_CHARS], "result": result})
     stop = ""
     b = d.budget
     if b.tokens >= b.max_tokens or b.usd >= b.max_usd:
         stop = "budget"  # tool-internal LLM calls (summarize/compare) exhausted the budget
-    return _bump(state, history=hist, surfaced=surfaced, tool_calls=state.get("tool_calls", 0) + 1, stop=stop,
+    return _bump(state, history=hist, surfaced=surfaced, surfaced_chunks=chunks,
+                 tool_calls=state.get("tool_calls", 0) + 1, stop=stop,
                  answer=_stopped(stop) if stop else state.get("answer", ""))
 
 
@@ -284,7 +289,8 @@ async def rewrite(state: AgentState, d: Deps) -> AgentState:
     if not q or stop:
         return _bump(state, grade="abstain", answer="I don't know.", stop=stop, next="stop")
     # fresh evidence for the retry: drop irrelevant results and their citations
-    return _bump(state, rewrite=q, rewrites=state.get("rewrites", 0) + 1, history=[], surfaced={})
+    return _bump(state, rewrite=q, rewrites=state.get("rewrites", 0) + 1, history=[], surfaced={},
+                 surfaced_chunks={})
 
 
 async def groundedness(state: AgentState, d: Deps) -> AgentState:

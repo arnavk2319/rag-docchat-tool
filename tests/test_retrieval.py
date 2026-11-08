@@ -1,13 +1,11 @@
 """T-010: BM25 store, RRF hybrid retrieval, doc_ids filter, eval line."""
 
 from app.core.models import FakeEmbedder
-from app.main import app
 from app.services.ingestion import IngestionService
 from app.services.retrieval import hybrid_search, rrf
 from app.store.bm25 import Bm25Store
-from app.store.chroma import ChromaStore
 from app.store.registry import SqliteRegistry
-from fastapi.testclient import TestClient
+from vecutil import make_store
 
 EMB = FakeEmbedder()
 
@@ -35,8 +33,8 @@ QUESTIONS = [
 
 
 def _build(tmp_path, owner="u"):
-    store = ChromaStore(tmp_path / "chroma")
-    bm = Bm25Store(tmp_path / "bm25")
+    store = make_store()
+    bm = Bm25Store()
     ids = [c for c, _ in MINI]
     texts = [t for _, t in MINI]
     store.add(ids, EMB.encode(texts), texts, [{"owner_id": owner, "doc_id": "d1"} for _ in ids])
@@ -67,26 +65,28 @@ def test_eval_hybrid_recall_at_5(tmp_path):
     assert hybrid >= dense
 
 
-def test_bm25_persist_and_reload(tmp_path):
-    _, bm = _build(tmp_path)
-    before = bm.query("u", "invoice INV-4471", k=5)
-    bm2 = Bm25Store(tmp_path / "bm25")
-    assert bm2.query("u", "invoice INV-4471", k=5) == before
-    assert before and before[0][0] == "c0"
-    assert bm2.query("other", "invoice", k=5) == []
-    assert all(f.suffix == ".json" for f in (tmp_path / "bm25").iterdir())
+def test_bm25_rebuild_from_store(tmp_path):
+    """A fresh Bm25Store (restart / second replica) rebuilds from the chunk text in the VectorStore."""
+    store, bm = _build(tmp_path)
+    before = hybrid_search("u", "invoice INV-4471", EMB.encode(["x"])[0], store, bm, top_k=5)
+    fresh = Bm25Store()
+    assert not fresh.has_owner("u") and fresh.query("u", "invoice", k=5) == []
+    after = hybrid_search("u", "invoice INV-4471", EMB.encode(["x"])[0], store, fresh, top_k=5)
+    assert fresh.has_owner("u")
+    assert [h.chunk_id for h in after] == [h.chunk_id for h in before]
+    assert fresh.query("u", "invoice INV-4471", k=5) == bm.query("u", "invoice INV-4471", k=5)
+    assert fresh.query("u", "invoice INV-4471", k=5)[0][0] == "c0"
+    assert fresh.query("other", "invoice", k=5) == []
 
 
 def test_bm25_delete(tmp_path):
     _, bm = _build(tmp_path)
     bm.delete_doc("u", "d1")
     assert bm.query("u", "invoice", k=5) == []
-    assert not list((tmp_path / "bm25").iterdir())
-    assert Bm25Store(tmp_path / "bm25").query("u", "invoice", k=5) == []
 
 
 def test_doc_ids_filter_two_of_three_and_owner(tmp_path):
-    store = ChromaStore(tmp_path / "chroma")
+    store = make_store()
     for owner, doc in [("u", "d1"), ("u", "d2"), ("u", "d3"), ("v", "d4")]:
         store.add([f"{doc}-0"], EMB.encode(["x"]), ["x"], [{"owner_id": owner, "doc_id": doc}])
     v = EMB.encode(["x"])[0]
@@ -103,30 +103,25 @@ async def test_ingest_indexes_and_delete_removes(tmp_path):
     from pathlib import Path
 
     reg = SqliteRegistry(tmp_path / "r.db")
-    store = ChromaStore(tmp_path / "chroma")
-    bm = Bm25Store(tmp_path / "bm25")
-    svc = IngestionService(reg, store, EMB, bm25=bm)
+    store = make_store()
+    bm = Bm25Store()
+    svc = IngestionService(reg, store.inner, EMB, bm25=bm)
     p = Path(__file__).parent / "fixtures" / "sample.txt"
     doc = await svc.ingest("u1", str(p), "sample.txt", "text/plain")
     assert doc.status == "ready" and bm.has_doc("u1", doc.doc_id)
     assert await svc.delete("u1", doc.doc_id)
     assert not bm.has_doc("u1", doc.doc_id)
-    assert not list((tmp_path / "bm25").iterdir())
 
 
-def test_restart_gives_same_hits(tmp_path, monkeypatch):
-    h = {"X-User-Id": "alice"}
-    files = [("files", ("n.txt", b"The zebra crossing zanzibar protocol is fascinating.", "text/plain"))]
+async def test_ingested_corpus_rebuilds_bm25_after_restart(tmp_path):
+    from pathlib import Path
 
-    def ask(c):
-        r = c.post("/v1/query", json={"question": "zanzibar protocol"}, headers=h)
-        assert r.status_code == 200, r.text
-        return [(x["doc_id"], x.get("chunk_id")) for x in r.json()["citations"]], r.json()
-
-    with TestClient(app) as c:
-        assert c.post("/v1/documents", files=files, headers=h).status_code == 200
-        first, body = ask(c)
-        assert first and not body["abstained"]
-    with TestClient(app) as c:  # new lifespan rebuilds BM25 from JSON on disk
-        assert c.app.state.bm25.query("alice", "zanzibar", k=3)
-        assert ask(c)[0] == first
+    reg = SqliteRegistry(tmp_path / "r.db")
+    store = make_store()
+    svc = IngestionService(reg, store.inner, EMB, bm25=Bm25Store())
+    p = Path(__file__).parent / "fixtures" / "sample.txt"
+    doc = await svc.ingest("u1", str(p), "sample.txt", "text/plain")
+    assert doc.status == "ready"
+    fresh = Bm25Store()  # simulated restart: only the VectorStore survives
+    hits = hybrid_search("u1", "sample", EMB.encode(["sample"])[0], store, fresh, top_k=3)
+    assert hits and fresh.has_doc("u1", doc.doc_id)

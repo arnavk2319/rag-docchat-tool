@@ -16,6 +16,20 @@
     "p95_latency_s": 8,
     "max_usd_per_request": 0.05
   },
+  "stream_citations": {
+    "_label": "mock",
+    "citation_validity": 0.95
+  },
+  "doc_intel": {
+    "_label": "mock",
+    "citation_present": 0.95,
+    "sentiment_label_accuracy": 0.8
+  },
+  "doc_compare": {
+    "_label": "mock",
+    "compare_citation_coverage": 0.9,
+    "compare_groundedness": 0.8
+  },
   "safety": {
     "injection_block_rate": 0.9
   }

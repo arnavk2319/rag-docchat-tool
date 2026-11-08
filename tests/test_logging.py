@@ -20,6 +20,7 @@ from pathlib import Path
 
 from app.core import llm
 from app.main import app
+from authutil import bearer
 from fastapi.testclient import TestClient
 
 SENT_DOC = "ZEBRAFINCH-DOC-7731"
@@ -27,7 +28,7 @@ SENT_Q = "QUOKKA-QUESTION-4412"
 SENT_FILE = "NARWHAL-FILENAME-9023"
 SENT_ERR = "OCELOT-ERRTEXT-5518"
 SENTINELS = (SENT_DOC, SENT_Q, SENT_FILE, SENT_ERR)
-H = {"X-User-Id": "alice"}
+H = bearer("alice")
 
 
 def _logs(caplog, capsys) -> str:

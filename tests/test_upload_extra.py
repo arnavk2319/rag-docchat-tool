@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from app.api import uploads
 from app.core import security as sec
+from authutil import bearer
 from upload_harness import StubIngestion, first, make_client, post, zip_bytes
 
 
@@ -85,7 +86,7 @@ def test_rejections_create_no_temp_and_skip_ingest(client, tmpdir_used, stub, na
 
 
 def test_missing_filename(client, stub):
-    resp = client.post("/v1/documents", files={"files": ("", b"hi")}, headers={"X-User-Id": "u1"})
+    resp = client.post("/v1/documents", files={"files": ("", b"hi")}, headers=bearer("u1"))
     assert resp.status_code == 422
     body = resp.json()
     assert body["code"] == "validation_error"

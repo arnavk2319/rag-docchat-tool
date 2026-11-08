@@ -8,6 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from ..vectorstore.base import EMBEDDING_DIM
 from .config import Settings
 
 log = logging.getLogger(__name__)
@@ -17,7 +18,8 @@ class FakeEmbedder:
     """Deterministic stand-in used when MODELS_FAKE=1 (tests)."""
 
     def encode(self, texts: list[str], **_: Any) -> list[list[float]]:
-        return [[float(len(t) % 7), float(len(t) % 11), 1.0] for t in texts]
+        # 3 informative dims zero-padded to the VectorStore width; cosine ranking is unchanged.
+        return [[float(len(t) % 7), float(len(t) % 11), 1.0] + [0.0] * (EMBEDDING_DIM - 3) for t in texts]
 
 
 _WORD = re.compile(r"[a-z0-9]{3,}")

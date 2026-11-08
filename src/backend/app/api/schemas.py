@@ -116,6 +116,59 @@ class SessionMessageOut(BaseModel):
     created_at: datetime
 
 
+class SessionListItem(BaseModel):
+    session_id: str
+    title: str
+    updated_at: datetime
+
+
+class SessionList(BaseModel):
+    items: list[SessionListItem]
+    total: int
+
+
 class SessionOut(BaseModel):
     session_id: str
     messages: list[SessionMessageOut]
+
+
+class DocSummaryResponse(BaseModel):
+    doc_id: str
+    summary: str
+    citations: list[Citation]
+    abstained: bool = False
+    partial: bool = False  # document text was cut at the prompt cap
+
+
+class DocSentimentResponse(BaseModel):
+    doc_id: str
+    label: str  # positive | negative | neutral | mixed | unclear
+    confidence: float = Field(ge=0, le=1)
+    rationale: str
+    citations: list[Citation]
+    abstained: bool = False
+    partial: bool = False
+
+
+class CompareRequest(BaseModel):
+    doc_ids: list[str] = Field(min_length=2, max_length=5)
+    focus: str = Field(default="", max_length=200)
+
+    @model_validator(mode="after")
+    def _distinct(self) -> Self:
+        if len(set(self.doc_ids)) < 2:
+            raise ValueError("provide at least 2 distinct doc_ids")
+        return self
+
+
+class ComparePoint(BaseModel):
+    point: str
+    citations: list[Citation]  # built server-side from stored records; cover each document cited
+
+
+class CompareResponse(BaseModel):
+    doc_ids: list[str]
+    similarities: list[ComparePoint]
+    differences: list[ComparePoint]
+    abstained: bool = False
+    partial: bool = False  # document text was cut at the prompt cap

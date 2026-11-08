@@ -13,6 +13,7 @@ Failure reasons stored/logged are short codes, never document text.
 from __future__ import annotations
 
 import asyncio
+import copy
 import hashlib
 import logging
 import os
@@ -20,12 +21,13 @@ import threading
 from typing import Any
 
 from app.core.concurrency import run_blocking
+from app.objectstore import ObjectStore, original_key
 from app.services.chunking import chunk_document
 from app.store.bm25 import Bm25Store
-from app.store.chroma import VectorStore
 from app.store.parents import Parent, SqliteParents
 from app.store.registry import Document, Registry, SqliteRegistry
 from app.utilities.file_handler import ParsedPage, ParseError, parse_uploaded_file
+from app.vectorstore import DEFAULT_TENANT, ChunkRecord, VectorStore
 
 log = logging.getLogger(__name__)
 
@@ -56,6 +58,11 @@ def sha256_file(path: str) -> str:
         for block in iter(lambda: f.read(1 << 20), b""):
             h.update(block)
     return h.hexdigest()
+
+
+def _read_bytes(path: str) -> bytes:
+    with open(path, "rb") as f:
+        return f.read()
 
 
 def chunk_pages(pages: list[ParsedPage], doc_id: str, owner_id: str) -> tuple[list[Parent], list[Chunk]]:
@@ -101,8 +108,12 @@ class IngestionService:
         embedder: Any | None = None,
         parents: SqliteParents | None = None,
         bm25: Bm25Store | None = None,
+        tenant_id: str = DEFAULT_TENANT,
+        objects: ObjectStore | None = None,
     ) -> None:
+        self._objects = objects
         self._reg, self._store, self._embedder = registry, store, embedder
+        self._tenant = tenant_id
         self._bm25 = bm25
         if parents is None:
             # Parents share the registry's SQLite file (same DB_PATH).
@@ -110,6 +121,18 @@ class IngestionService:
                 raise TypeError("pass an explicit parents store for non-SQLite registries")
             parents = SqliteParents(registry.db_path)
         self._parents = parents
+
+    @property
+    def registry(self) -> Registry:
+        return self._reg
+
+    def for_tenant(self, tenant_id: str) -> IngestionService:
+        """Copy bound to the authenticated tenant (registry, vectors, parents, BM25 all scoped)."""
+        v = copy.copy(self)
+        v._reg, v._tenant = self._reg.for_tenant(tenant_id), tenant_id
+        v._parents = self._parents.for_tenant(tenant_id)
+        v._bm25 = self._bm25.for_tenant(tenant_id) if self._bm25 is not None else None
+        return v
 
     def _emb(self) -> Any:
         if self._embedder is None:
@@ -133,7 +156,7 @@ class IngestionService:
             with _inflight_lock:
                 if doc.doc_id in _inflight:
                     return doc
-            await run_blocking(self._purge, owner_id, doc.doc_id)
+            await self._purge(owner_id, doc.doc_id)
         with _inflight_lock:
             if doc.doc_id in _inflight:
                 return doc
@@ -143,7 +166,26 @@ class IngestionService:
         finally:
             with _inflight_lock:
                 _inflight.discard(doc.doc_id)
-        return self._reg.get(owner_id, doc.doc_id) or doc
+        final = self._reg.get(owner_id, doc.doc_id) or doc
+        if final.status == "ready":
+            await self._persist_original(final, path)
+        return final
+
+    def original_key(self, doc: Document) -> str:
+        return original_key(self._tenant, doc.doc_id, doc.filename)
+
+    async def _persist_original(self, doc: Document, path: str) -> None:
+        """Store the uploaded original (idempotent). Best effort: a store fault is logged only."""
+        if self._objects is None:
+            return
+        key = self.original_key(doc)
+        try:
+            if await self._objects.exists(self._tenant, key):
+                return
+            data = await run_blocking(_read_bytes, path)
+            await self._objects.put(self._tenant, key, data)
+        except Exception as e:  # noqa: BLE001
+            log.error("original persist failed doc=%s err=%s", doc.doc_id, type(e).__name__)
 
     async def _run(self, doc: Document, path: str) -> None:
         owner = doc.owner_id
@@ -158,12 +200,10 @@ class IngestionService:
             for i in range(0, len(chunks), EMBED_BATCH):
                 batch = chunks[i : i + EMBED_BATCH]
                 vecs = await run_blocking(_encode, self._emb(), [c.text for c in batch])
-                await run_blocking(
-                    self._store.add,
-                    [c.chunk_id for c in batch],
+                await self._store.upsert_chunks(
+                    self._tenant, owner, doc.doc_id,
+                    [ChunkRecord(chunk_id=c.chunk_id, text=c.text, metadata=c.metadata) for c in batch],
                     vecs,
-                    [c.text for c in batch],
-                    [c.metadata for c in batch],
                 )
             if self._bm25 is not None:
                 await run_blocking(
@@ -179,26 +219,29 @@ class IngestionService:
                 reason = "cancelled"
             else:
                 reason = type(e).__name__
-            self._fail(doc, reason)
+            await self._fail(doc, reason)
             if not isinstance(e, Exception):
                 raise
             return
         await run_blocking(self._reg.update_status, owner, doc.doc_id, "ready")
 
-    def _purge(self, owner_id: str, doc_id: str) -> None:
-        self._store.delete_doc(owner_id, doc_id)
-        self._parents.delete_doc(owner_id, doc_id)
+    async def _purge(self, owner_id: str, doc_id: str) -> None:
+        await self._store.delete_doc(self._tenant, owner_id, doc_id)
+        await run_blocking(self._parents.delete_doc, owner_id, doc_id)
         if self._bm25 is not None:
-            self._bm25.delete_doc(owner_id, doc_id)
+            await run_blocking(self._bm25.delete_doc, owner_id, doc_id)
 
-    def _fail(self, doc: Document, reason: str) -> None:
-        """Purge partial vectors and mark failed. Synchronous so it also runs when cancelled.
+    async def _fail(self, doc: Document, reason: str) -> None:
+        """Purge partial vectors and mark failed; also runs after a cancellation.
 
         Each step is attempted independently; errors are logged by class name only.
         """
         log.warning("ingest failed doc=%s reason=%s", doc.doc_id, reason)
+        try:
+            await self._store.delete_doc(self._tenant, doc.owner_id, doc.doc_id)
+        except Exception as e:  # noqa: BLE001
+            log.error("ingest cleanup step failed doc=%s err=%s", doc.doc_id, type(e).__name__)
         for step, args in (
-            (self._store.delete_doc, (doc.owner_id, doc.doc_id)),
             (self._parents.delete_doc, (doc.owner_id, doc.doc_id)),
             *(((self._bm25.delete_doc, (doc.owner_id, doc.doc_id)),) if self._bm25 else ()),
             (self._reg.update_status, (doc.owner_id, doc.doc_id, "failed")),
@@ -218,5 +261,8 @@ class IngestionService:
         with _inflight_lock:
             if doc_id in _inflight:
                 raise DocumentBusyError(doc_id)
-        await run_blocking(self._purge, owner_id, doc_id)
+        doc = await run_blocking(self._reg.get, owner_id, doc_id)
+        await self._purge(owner_id, doc_id)
+        if self._objects is not None and doc is not None:
+            await self._objects.delete(self._tenant, self.original_key(doc))
         return await run_blocking(self._reg.delete, owner_id, doc_id)

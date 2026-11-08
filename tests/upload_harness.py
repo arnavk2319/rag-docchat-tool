@@ -7,11 +7,12 @@ from datetime import UTC, datetime
 from app.api import documents
 from app.api.errors import install_error_handlers
 from app.store.registry import Document
+from authutil import bearer
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 URL = "/v1/documents"
-HDR = {"X-User-Id": "u1"}
+HDR = bearer("u1")
 
 
 class StubIngestion:

@@ -59,8 +59,103 @@ def norm(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip().lower()
 
 
-def load_golden(path: Path = EVALS / "golden.jsonl") -> list[dict[str, Any]]:
+DOC_INTEL_TYPES = ("summary", "sentiment", "doc_compare")  # T-030/T-031 items: inline text, no retrieval/agent
+
+
+def _load_all(path: Path) -> list[dict[str, Any]]:
     return [json.loads(ln) for ln in path.read_text().splitlines() if ln.strip()]
+
+
+def load_golden(path: Path = EVALS / "golden.jsonl") -> list[dict[str, Any]]:
+    """Agent/retrieval items only (doc-intel items are in load_docintel)."""
+    return [g for g in _load_all(path) if g["type"] not in DOC_INTEL_TYPES]
+
+
+def load_docintel(path: Path = EVALS / "golden.jsonl") -> list[dict[str, Any]]:
+    return [g for g in _load_all(path) if g["type"] in DOC_INTEL_TYPES and g["type"] != "doc_compare"]
+
+
+def load_compare(path: Path = EVALS / "golden.jsonl") -> list[dict[str, Any]]:
+    return [g for g in _load_all(path) if g["type"] == "doc_compare"]
+
+
+POS = {"wonderful", "friendly", "helpful", "spotless", "excellent", "loved", "love", "delighted",
+       "fantastic", "delicious", "lovely", "great", "happily", "reliable"}
+NEG = {"terrible", "dirty", "rude", "disappointed", "awful", "cold", "useless", "poor", "frustrating",
+       "waste", "broke", "never"}
+
+
+def lex_label(text: str) -> str:
+    """Mock stand-in classifier (lexicon). Proves wiring, not model quality."""
+    ws = set(re.findall(r"[a-z]+", text.lower()))
+    p, n = bool(ws & POS), bool(ws & NEG)
+    return "mixed" if p and n else "positive" if p else "negative" if n else "neutral"
+
+
+async def doc_intel_rows(golden: list[dict[str, Any]], scripted: bool) -> list[dict[str, Any]]:
+    """Run each item through the real docintel service (llm wrapper; mock script when scripted)."""
+    from app.core import llm
+    from app.services.docintel import classify_doc, summarize_doc
+    from app.store.parents import Parent
+
+    rows = []
+    for g in golden:
+        text = g["text"]
+        parent = Parent(owner_id=OWNER, doc_id=g["id"], parent_id=f"{g['id']}-0", char_start=0,
+                        char_end=len(text), text=text)
+        if g["type"] == "sentiment":
+            llm.mock_script(*([J(label=lex_label(text), confidence=0.8, rationale="lexicon",
+                                 sections=[0], insufficient=False)] if scripted else []))
+            r = await classify_doc([parent])
+            ok = r.abstained if g["abstain"] else r.label == g["expected"]
+        else:
+            first = re.split(r"(?<=[.!?])\s+", text)[0]
+            llm.mock_script(*([J(summary=first, sections=[0], insufficient=False)] if scripted else []))
+            r = await summarize_doc([parent])
+            ok = r.abstained if g["abstain"] else not r.abstained
+        llm.mock_script()
+        rows.append({"id": g["id"], "type": g["type"], "abstain": g["abstain"], "ok": ok,
+                     "abstained": r.abstained, "cited": bool(r.cited)})
+    return rows
+
+
+def _words(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z0-9]+", text.lower()) if w not in STOP and len(w) > 2}
+
+
+async def compare_rows(golden: list[dict[str, Any]], scripted: bool) -> list[dict[str, Any]]:
+    """Run each comparison item through the real compare service. Mock script: one similarity and one
+    difference built from the first sentence of each document, citing each document's section."""
+    from app.core import llm
+    from app.services.compare import compare_docs
+    from app.store.parents import Parent
+
+    rows = []
+    for g in golden:
+        per_doc, firsts = [], []
+        for n, text in enumerate(g["texts"]):
+            did = f"{g['id']}-{n}"
+            parent = Parent(owner_id=OWNER, doc_id=did, parent_id=f"{did}-0", char_start=0,
+                            char_end=len(text), text=text)
+            per_doc.append((did, [parent]))
+            firsts.append(re.split(r"(?<=[.!?])\s+", text)[0])
+        idx = list(range(len(per_doc)))
+        llm.mock_script(*([J(similarities=[{"point": " ".join(firsts), "sections": idx}],
+                             differences=[{"point": " ".join(firsts), "sections": idx}],
+                             insufficient=False)] if scripted else []))
+        r = await compare_docs(per_doc, g["focus"])
+        llm.mock_script()
+        pts = [*r.similarities, *r.differences]
+        cited_docs = {p.doc_id for x in pts for p in x.cited}
+        # coverage: share of documents cited by at least one point
+        cov = len(cited_docs) / len(per_doc) if pts else 0.0
+        # groundedness: share of point content words found in the text of the sections it cites
+        gr = [len(_words(x.point) & _words(" ".join(p.text for p in x.cited))) / max(1, len(_words(x.point)))
+              for x in pts]
+        rows.append({"id": g["id"], "abstain": g["abstain"], "abstained": r.abstained,
+                     "coverage": cov, "grounded": M.mean(gr) if gr else 0.0,
+                     "ok": r.abstained if g["abstain"] else not r.abstained})
+    return rows
 
 
 class JudgeOut(BaseModel):
@@ -73,11 +168,12 @@ def eval_env(tmp: Path, mock: bool) -> Iterator[None]:
     """Offline, fake-model environment; restores the process env afterwards."""
     from app.core import config, llm, models
 
-    keys = ["LLM_PROVIDER", "MODELS_FAKE", "MIN_RERANK_SCORE", "CHROMA_DIR", "DB_PATH",
+    keys = ["LLM_PROVIDER", "MODELS_FAKE", "MIN_RERANK_SCORE", "DATABASE_URL", "DB_PATH",
             "ANTHROPIC_API_KEY"]
     saved = {k: os.environ.get(k) for k in keys}
     os.environ.update(MODELS_FAKE="1", MIN_RERANK_SCORE=MOCK_MIN_RERANK,
-                      CHROMA_DIR=str(tmp / "chroma"), DB_PATH=str(tmp / "db.sqlite"))
+                      DB_PATH=str(tmp / "db.sqlite"))
+    os.environ.pop("DATABASE_URL", None)  # evals never touch a real database
     if mock:
         os.environ["LLM_PROVIDER"] = "mock"
         os.environ.pop("ANTHROPIC_API_KEY", None)
@@ -103,16 +199,17 @@ async def build_corpus(tmp: Path) -> tuple[Any, dict[str, str]]:
     from app.services.agent.tools import ToolContext
     from app.services.ingestion import IngestionService
     from app.store.bm25 import Bm25Store
-    from app.store.chroma import ChromaStore
     from app.store.parents import SqliteParents
     from app.store.registry import SqliteRegistry
+    from app.vectorstore import InMemoryVectorStore, SyncVectors
 
     reg = SqliteRegistry(tmp / "db.sqlite")
     parents = SqliteParents(tmp / "db.sqlite")
-    store = ChromaStore(tmp / "chroma")
-    bm25 = Bm25Store(tmp / "bm25")
+    vstore = InMemoryVectorStore()
+    store = SyncVectors(vstore)
+    bm25 = Bm25Store()
     emb = FakeEmbedder()
-    svc = IngestionService(reg, store, emb, parents=parents, bm25=bm25)
+    svc = IngestionService(reg, vstore, emb, parents=parents, bm25=bm25)
     ids: dict[str, str] = {}
     for p in sorted(FIX.iterdir()):
         doc = await svc.ingest(OWNER, str(p), p.name, MIME[p.suffix])
@@ -292,6 +389,31 @@ async def judge(metric: str, q: str, evidence: str, answer: str, mock_score: flo
     return score
 
 
+def chunk_validity(ctx: Any, r: Any, doc_names: dict[str, str]) -> float | None:
+    """Share of stream citations whose chunk exists in the caller's corpus with an in-bounds span.
+
+    Built by the production builder, then re-checked against the stored records (child span must
+    sit inside its parent's span; a parent citation must equal the stored parent span). MOCK-labelled."""
+    from app.api.sse import build_citations
+
+    cites = build_citations(ctx, r, doc_names)
+    if not cites:
+        return None
+    ok = 0
+    for c in cites:
+        hit = next(iter(ctx.vectors.get(ctx.owner_id, [c.chunk_id])), None)
+        if hit is not None:
+            par = next(iter(ctx.parents.get_parents(ctx.owner_id, [str(hit.metadata.get("parent_id"))])), None)
+            lo, hi = (par.char_start, par.char_end) if par else (0, -1)
+            doc = str(hit.metadata.get("doc_id"))
+        else:
+            par = next(iter(ctx.parents.get_parents(ctx.owner_id, [c.chunk_id])), None)
+            lo, hi = (par.char_start, par.char_end) if par else (0, -1)
+            doc = par.doc_id if par else ""
+        ok += doc == c.doc_id and lo <= c.span.char_start <= c.span.char_end <= hi
+    return ok / len(cites)
+
+
 async def run_items(ctx: Any, ids: dict[str, str], golden: list[dict[str, Any]], scripted: bool,
                     cache: dict[str, float], spend: list[float]) -> list[dict[str, Any]]:
     from app.core import llm
@@ -315,6 +437,7 @@ async def run_items(ctx: Any, ids: dict[str, str], golden: list[dict[str, Any]],
         ans, gold = r.answer.strip(), item["gold"]
         abstained = ans == NOANS
         cited = {names[c["doc_id"]] for c in r.citations}
+        cvalid = None if item["abstain"] else chunk_validity(ctx, r, names)
         gold_docs = {g["doc"] for g in gold}
         done = not r.bounded_stop
         if item["abstain"]:
@@ -333,6 +456,7 @@ async def run_items(ctx: Any, ids: dict[str, str], golden: list[dict[str, Any]],
         rel_mock = (1.0 if abstained else 0.0) if item["abstain"] else (0.0 if abstained else min(1.0, overlap / 0.3))
         row = {
             "id": item["id"], "type": item["type"], "success": success, "citation_ok": cite_ok,
+            "chunk_valid": cvalid,
             "abstained": abstained, "steps": r.steps, "tool_calls": r.tool_calls,
             "stop_reason": r.stop_reason, "latency_s": latency, "tokens": r.tokens, "usd": r.usd,
             "tool_ok": [t == item["expected_tool"] and 'status="ok"' in res.split("\n", 1)[0]
@@ -352,6 +476,8 @@ async def injection_rate(tmp: Path) -> tuple[float, int]:
     """Reuse the T-021 payload suite (tests/test_injection.py): 10 payloads + poisoned session."""
     import pytest
 
+    if str(ROOT / "tests") not in sys.path:  # test_injection imports its sibling helper `authutil`
+        sys.path.insert(0, str(ROOT / "tests"))
     spec = importlib.util.spec_from_file_location("eval_injection_suite", ROOT / "tests/test_injection.py")
     assert spec and spec.loader
     mod = importlib.util.module_from_spec(spec)
@@ -380,11 +506,14 @@ async def compute(mode: str) -> dict[str, Any]:
         ret = [x for x in (retrieval_row(i, ctx, ids) for i in golden) if x]
         rows = await run_items(ctx, ids, golden, scripted, cache, spend)
         inj, n_inj = await injection_rate(tmp)
+        di = await doc_intel_rows(load_docintel(), scripted)
+        cmp_rows = await compare_rows(load_compare(), scripted)
     if not scripted:
         cache_path.parent.mkdir(exist_ok=True)
         cache_path.write_text(json.dumps(cache))
     cit = [r["citation_ok"] for r in rows if r["citation_ok"] is not None]
     faith = [r["faithfulness"] for r in rows if r["faithfulness"] is not None]
+    cv = [r["chunk_valid"] for r in rows if r["chunk_valid"] is not None]
     toolok = [x for r in rows for x in r["tool_ok"]]
     ooc = [r for r in rows if r["type"] == "out_of_corpus"]
     metrics = {
@@ -394,6 +523,7 @@ async def compute(mode: str) -> dict[str, Any]:
         "faithfulness": M.mean(faith),
         "relevance": M.mean([r["relevance"] for r in rows]),
         "citation_correct": M.mean([float(c) for c in cit]),
+        "citation_validity": M.mean(cv),
         "abstain_accuracy": M.mean([float(r["success"]) for r in ooc]),
         "task_success": M.mean([float(r["success"]) for r in rows]),
         "tool_call_accuracy": M.mean([float(x) for x in toolok]),
@@ -405,12 +535,20 @@ async def compute(mode: str) -> dict[str, Any]:
         "avg_usd_per_request": M.mean([r["usd"] for r in rows]),
         "max_usd_per_request": max(r["usd"] for r in rows),
         "injection_block_rate": inj,
+        "citation_present": M.mean([float(r["cited"]) for r in di if not r["abstain"]]),
+        "sentiment_label_accuracy": M.mean(
+            [float(r["ok"]) for r in di if r["type"] == "sentiment" and not r["abstain"]]),
+        "doc_intel_abstain_accuracy": M.mean([float(r["ok"]) for r in di if r["abstain"]]),
+        "compare_citation_coverage": M.mean([r["coverage"] for r in cmp_rows if not r["abstain"]]),
+        "compare_groundedness": M.mean([r["grounded"] for r in cmp_rows if not r["abstain"]]),
+        "compare_abstain_accuracy": M.mean([float(r["ok"]) for r in cmp_rows if r["abstain"]]),
     }
     return {
         "label": mode,
         "note": ("MOCK: scripted stand-in model + fake embedder/reranker. Proves the pipeline is "
                  "wired and measured, NOT model quality." if scripted else "LIVE run"),
-        "counts": {"golden": len(golden), "retrieval_items": len(ret), "injection_cases": n_inj},
+        "counts": {"golden": len(golden), "retrieval_items": len(ret), "injection_cases": n_inj,
+                   "doc_intel": len(di), "doc_compare": len(cmp_rows)},
         "judge_usd": round(sum(spend), 6),
         "metrics": {k: round(v, 4) for k, v in metrics.items()},
         "items": rows,

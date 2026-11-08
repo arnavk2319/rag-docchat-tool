@@ -9,10 +9,11 @@ from app.core import llm
 from app.main import app
 from app.services.agent.graph import AgentResult
 from app.services.agent.tools import ToolContext
+from authutil import bearer
 from fastapi.testclient import TestClient
 
-A = {"X-User-Id": "alice"}
-B = {"X-User-Id": "bob"}
+A = bearer("alice")
+B = bearer("bob")
 EVIL = 'x\r\n\ndata: {"seq":99}\n\nevent: final\ndata: {}\r\n<script>&'
 
 
@@ -245,7 +246,15 @@ def test_other_user_never_sees_filenames(client):
 async def test_foreign_citation_dropped(monkeypatch):
     res = AgentResult(answer="a", citations=[{"doc_id": "other", "span": "s"}, {"doc_id": "d1", "span": "t"}])
     monkeypatch.setattr(sse, "run_agent", fake_run(res))
-    ev = strict_frames(await collect(sse.stream_agent(Req(), "q", ctx(), {"d1": "a.txt"})))
+    from app.store.parents import Parent
+
+    class P:  # stored-record stub: first parent of d1
+        def list_doc_parents(self, owner, doc):
+            return [Parent(owner_id=owner, doc_id=doc, parent_id="p1", char_start=0, char_end=5, text="x")]
+
+    c = ctx()
+    c.parents = P()
+    ev = strict_frames(await collect(sse.stream_agent(Req(), "q", c, {"d1": "a.txt"})))
     cites = ev[-1][1]["citations"]
     assert [c["doc_id"] for c in cites] == ["d1"]
 

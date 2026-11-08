@@ -12,10 +12,11 @@ from app.services import chunking as ck
 from app.services import ingestion as ing
 from app.services.ingestion import IngestionService, chunk_pages
 from app.services.parent_lookup import expand_to_parents
-from app.store.chroma import ChromaStore, Hit
 from app.store.parents import Parent, SqliteParents
 from app.store.registry import SqliteRegistry
 from app.utilities import file_handler as fh
+from app.vectorstore import Hit
+from vecutil import make_store
 
 FIX = Path(__file__).parent / "fixtures"
 CT, PT = ck.CHILD_TARGET_CHARS, ck.PARENT_TARGET_CHARS
@@ -431,9 +432,9 @@ class Spy(FakeEmbedder):
 
 def make(tmp_path):
     reg = SqliteRegistry(tmp_path / "r.db")
-    store = ChromaStore(tmp_path / "c")
+    store = make_store()
     emb = Spy()
-    return IngestionService(reg, store, emb), reg, store, emb
+    return IngestionService(reg, store.inner, emb), reg, store, emb
 
 
 def write(tmp_path, name, text):
@@ -486,10 +487,10 @@ async def test_parse_failure_and_empty_doc_leave_no_parents(tmp_path):
 async def test_failure_midway_purges_parents(tmp_path, monkeypatch):
     svc, _reg, store, _emb = make(tmp_path)
 
-    def boom(*a, **k):
+    async def boom(*a, **k):
         raise RuntimeError("store down")
 
-    monkeypatch.setattr(store, "add", boom)
+    monkeypatch.setattr(store.inner, "upsert_chunks", boom)
     d = await svc.ingest("u", write(tmp_path, "a.txt", "hello world. " * 500), "a.txt", fh.TXT)
     assert d.status == "failed"
     assert svc._parents.count("u") == 0 and store.count("u") == 0

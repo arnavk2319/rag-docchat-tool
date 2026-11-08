@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from app.services.parent_lookup import ParentHit
-from app.store.chroma import Hit
+from app.vectorstore.sync import Hit
 
 
 def rerank_parents(

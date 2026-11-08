@@ -7,10 +7,11 @@ import pytest
 from app.api import sse
 from app.core import llm
 from app.main import app
+from authutil import bearer
 from fastapi.testclient import TestClient
 
-A = {"X-User-Id": "alice"}
-B = {"X-User-Id": "bob"}
+A = bearer("alice")
+B = bearer("bob")
 
 
 def J(**kw):

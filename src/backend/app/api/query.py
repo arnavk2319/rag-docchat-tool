@@ -18,6 +18,7 @@ from ..core.config import get_settings
 from ..core.models import get_models
 from ..core.prompts import load_prompt
 from ..core.security import sanitize_output
+from ..objectstore.loader import make_table_loader
 from ..services.agent.tools import ToolContext
 from ..services.parent_lookup import expand_to_parents
 from ..services.rerank import pick_cited_children, rerank_parents
@@ -47,7 +48,17 @@ IDK = "I don't know."
     "/query",
     response_model=QueryResponse,
     dependencies=[Depends(json_body_limit)],
+    description=(
+        "Answer a question with citations. With `stream=true` the response is Server-Sent Events "
+        "(`text/event-stream`, `Cache-Control: no-cache`, `X-Accel-Buffering: no`). "
+        "Events: step, tool_call, tool_result, token, citations, error, final. `citations` and `final` "
+        "carry chunk-level `Citation` objects `{doc_id, filename, chunk_id, page|sheet, "
+        "span{char_start,char_end}}` built server-side from stored records; `final` adds answer, "
+        "abstained, stopped_reason, usage, session_id."
+    ),
     responses={
+        200: {"content": {"text/event-stream": {"schema": {"type": "string"}}},
+              "description": "JSON answer, or an SSE event stream when `stream=true`"},
         401: {"model": ErrorBody},
         404: {"model": ErrorBody},
         409: {"model": ErrorBody},
@@ -173,6 +184,7 @@ def _sse_response(
     ctx = ToolContext(
         owner_id=user, doc_ids=list(names), registry=registry, vectors=store, parents=parents,
         bm25=bm25, embed=_embed_sync, reranker=get_models().reranker,
+        table_loader=make_table_loader(getattr(request.app.state, "objects", None), registry),
     )
     sid = body.session_id
 

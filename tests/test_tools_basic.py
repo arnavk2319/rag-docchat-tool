@@ -5,9 +5,9 @@ from app.services.agent.tools import (
     run_tool,
     wrap,
 )
-from app.store.chroma import Hit
 from app.store.parents import Parent, SqliteParents
 from app.store.registry import SqliteRegistry
+from app.vectorstore import Hit
 
 
 class FakeVec:

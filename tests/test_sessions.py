@@ -2,15 +2,17 @@
 
 import json
 import sqlite3
+from datetime import UTC, datetime
 
 import pytest
 from app.core import llm
 from app.main import app
-from app.store.sessions import SqliteSessions
+from app.store.sessions import InMemorySessions, SqliteSessions
+from authutil import bearer
 from fastapi.testclient import TestClient
 
-A = {"X-User-Id": "alice"}
-B = {"X-User-Id": "bob"}
+A = bearer("alice")
+B = bearer("bob")
 
 
 @pytest.fixture
@@ -244,7 +246,7 @@ def test_nonstream_store_failure_still_200(client, monkeypatch):
     def boom(*a, **k):
         raise sqlite3.OperationalError("disk")
 
-    monkeypatch.setattr(SqliteSessions, "append_turn", boom)
+    monkeypatch.setattr(InMemorySessions, "append_turn", boom)
     r = client.post("/v1/query", json={"question": "sky?", "session_id": sid}, headers=A)
     assert r.status_code == 200 and r.json()["answer"]
 
@@ -254,8 +256,9 @@ def test_nonstream_abstain_not_stored_and_expired_404(client):
     r = client.post("/v1/query", json={"question": "sky?", "session_id": sid}, headers=A)
     assert r.status_code == 200 and r.json()["abstained"] is True and r.json()["session_id"] == sid
     assert client.get(f"/v1/sessions/{sid}", headers=A).json()["messages"] == []
-    with sqlite3.connect(app.state.sessions._path) as c:
-        c.execute("UPDATE sessions SET expires_at='2000-01-01T00:00:00+00:00'")
+    st = app.state.sessions._s  # in-memory store: expire every session
+    for k, (o, _exp, m) in list(st.items()):
+        st[k] = (o, datetime(2000, 1, 1, tzinfo=UTC), m)
     assert client.get(f"/v1/sessions/{sid}", headers=A).status_code == 404
     r = client.post("/v1/query", json={"question": "sky?", "session_id": sid}, headers=A)
     assert r.status_code == 404

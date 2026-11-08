@@ -1,4 +1,4 @@
-"""T-006: ingestion pipeline, embedded Chroma, dedupe, delete, owner scoping."""
+"""T-006: ingestion pipeline, in-memory VectorStore, dedupe, delete, owner scoping."""
 
 import asyncio
 import shutil
@@ -9,9 +9,9 @@ import pytest
 from app.core.models import FakeEmbedder
 from app.services import ingestion as ing
 from app.services.ingestion import IngestionService, chunk_pages
-from app.store.chroma import ChromaStore
 from app.store.registry import SqliteRegistry
 from app.utilities import file_handler as fh
+from vecutil import V111, make_store
 
 FIX = Path(__file__).parent / "fixtures"
 CASES = [
@@ -36,8 +36,8 @@ class CountingEmbedder(FakeEmbedder):
 def env(tmp_path):
     emb = CountingEmbedder()
     reg = SqliteRegistry(tmp_path / "r.db")
-    store = ChromaStore(tmp_path / "chroma")
-    return IngestionService(reg, store, emb), reg, store, emb
+    store = make_store()
+    return IngestionService(reg, store.inner, emb), reg, store, emb
 
 
 @pytest.mark.parametrize(("name", "mime", "key"), CASES)
@@ -47,7 +47,7 @@ async def test_ingest_each_type_metadata(env, name, mime, key):
     assert doc.status == "ready"
     n = store.count("u1", doc.doc_id)
     assert n > 0
-    hits = store.query("u1", [1.0, 1.0, 1.0], k=50, doc_id=doc.doc_id)
+    hits = store.query("u1", V111, k=50, doc_id=doc.doc_id)
     assert len(hits) == n
     for h in hits:
         m = h.metadata
@@ -77,16 +77,16 @@ async def test_delete_removes_row_and_vectors(env):
     assert store.count("u1", d.doc_id) > 0
     assert await svc.delete("u1", d.doc_id) is True
     assert reg.get("u1", d.doc_id) is None
-    assert store.query("u1", [1.0, 1.0, 1.0], k=5, doc_id=d.doc_id) == []
+    assert store.query("u1", V111, k=5, doc_id=d.doc_id) == []
     assert store.count("u1", d.doc_id) == 0
 
 
 async def test_query_is_owner_scoped(env):
     svc, _, store, _ = env
     await svc.ingest("u1", str(FIX / "sample.txt"), "a.txt", fh.TXT)
-    assert store.query("u2", [1.0, 1.0, 1.0], k=5) == []
+    assert store.query("u2", V111, k=5) == []
     with pytest.raises(ValueError):
-        store.query("", [1.0, 1.0, 1.0])
+        store.query("", V111)
 
 
 async def test_failed_parse_marks_failed_without_leak_then_retries(
@@ -263,6 +263,6 @@ async def test_small_owner_next_to_large_owner(env, tmp_path):
     big.write_text("word " * 5000)
     await svc.ingest("big", str(big), "big.txt", fh.TXT)
     d = await svc.ingest("small", str(FIX / "sample.txt"), "s.txt", fh.TXT)
-    hits = store.query("small", [1.0, 1.0, 1.0], k=20)
+    hits = store.query("small", V111, k=20)
     assert len(hits) == store.count("small", d.doc_id) == 1
     assert {h.metadata["owner_id"] for h in hits} == {"small"}

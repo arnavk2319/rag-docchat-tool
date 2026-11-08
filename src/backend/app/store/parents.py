@@ -1,6 +1,6 @@
 """Owner-scoped parent chunks (context returned to the LLM) in the registry's SQLite file.
 
-Children are embedded in Chroma; their parent text lives here. Stdlib sqlite3, per-call
+Children are embedded in the VectorStore; their parent text lives here. Stdlib sqlite3, per-call
 connections, parameterized SQL only. Every read/write is keyed by owner_id.
 """
 
@@ -58,6 +58,12 @@ class SqliteParents:
 
     def _conn(self) -> AbstractContextManager[sqlite3.Connection]:
         return connect(self._path)
+
+    def for_tenant(self, tenant_id: str):
+        """Owner keys are namespaced by tenant (store/scoped.py)."""
+        from app.store.scoped import TenantParents
+
+        return TenantParents(self, tenant_id)
 
     def replace_doc(self, owner_id: str, doc_id: str, parents: Sequence[Parent]) -> None:
         """Atomically replace all parents of a document (one transaction)."""

@@ -9,17 +9,21 @@ Synchronous: async callers wrap calls in run_blocking.
 
 from __future__ import annotations
 
+import copy
 import json
 import sqlite3
+import threading
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Protocol
 
 from pydantic import BaseModel
 
 from app.core.llm import _approx_tokens
 from app.store.sqlite import connect, init_db
+from app.vectorstore.base import DEFAULT_TENANT
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS sessions (
@@ -50,10 +54,20 @@ class SessionLimitError(Exception):
 
 
 class SessionMessage(BaseModel):
+    tenant_id: str = DEFAULT_TENANT
     role: str
     content: str
     citation_ids: list[str] = []
     created_at: datetime
+
+
+class SessionSummary(BaseModel):
+    session_id: str
+    first_question: str = ""
+    updated_at: datetime
+
+
+FIRST_Q_CHARS = 200  # store-side cap; the API truncates further for the title
 
 
 def _now() -> datetime:
@@ -62,6 +76,139 @@ def _now() -> datetime:
 
 def _clip(text: str, cap: int) -> str:
     return text if len(text) <= cap else text[: cap - len(MARK)] + MARK
+
+
+class SessionStore(Protocol):
+    max_messages: int
+    max_tokens: int
+
+    def purge_expired(self) -> int: ...
+    def create(self, owner_id: str, max_per_owner: int | None = None) -> str: ...
+    def exists(self, owner_id: str, sid: str) -> bool: ...
+    def messages(self, owner_id: str, sid: str) -> list[SessionMessage] | None: ...
+    def list_sessions(
+        self, owner_id: str, limit: int, offset: int
+    ) -> tuple[list[SessionSummary], int]: ...
+    def append_turn(
+        self, owner_id: str, sid: str, question: str, answer: str, citation_ids: list[str]
+    ) -> bool: ...
+    def delete(self, owner_id: str, sid: str) -> bool: ...
+    def for_tenant(self, tenant_id: str) -> SessionStore: ...
+
+
+def bound_messages(msgs: list[SessionMessage], max_messages: int, max_tokens: int) -> list[SessionMessage]:
+    """Keep the last `max_messages`, then drop oldest whole turns while over `max_tokens`."""
+    msgs = msgs[-max_messages:]
+    while len(msgs) > 2 and sum(_approx_tokens(m.content) for m in msgs) > max_tokens:
+        msgs = msgs[2:]  # the newest turn is always kept
+    return msgs
+
+
+class InMemorySessions:
+    """Dict-backed SessionStore (same contract as SqliteSessions); used by unit tests."""
+
+    def __init__(
+        self, *, max_messages: int = 20, max_tokens: int = 2000, ttl_hours: float = 24.0,
+        clock=_now,
+    ) -> None:
+        self.max_messages = max(2, max_messages)
+        self.max_tokens = max(1, max_tokens)
+        self.ttl = timedelta(hours=ttl_hours)
+        self._now = clock
+        self._s: dict[str, tuple[str, datetime, list[SessionMessage]]] = {}  # sid -> owner, exp, msgs
+        self._tenant_of: dict[str, str] = {}  # sid -> tenant (shared by all tenant views)
+        self._lock = threading.Lock()
+        self._t = DEFAULT_TENANT
+
+    def for_tenant(self, tenant_id: str) -> InMemorySessions:
+        """View over the same storage; sessions of other tenants look unknown."""
+        v = copy.copy(self)
+        v._t = tenant_id
+        return v
+
+    def purge_expired(self) -> int:
+        with self._lock:
+            dead = [k for k, (_, exp, _) in self._s.items() if exp <= self._now()]
+            for k in dead:
+                del self._s[k]
+                self._tenant_of.pop(k, None)
+        return len(dead)
+
+    def _live(self, owner_id: str, sid: str):
+        row = self._s.get(sid)
+        ok = row and row[0] == owner_id and row[1] > self._now() and self._tenant_of.get(sid) == self._t
+        return row if ok else None
+
+    def create(self, owner_id: str, max_per_owner: int | None = None) -> str:
+        with self._lock:
+            now = self._now()
+            if max_per_owner is not None and sum(
+                1 for k, (o, exp, _) in self._s.items()
+                if o == owner_id and exp > now and self._tenant_of.get(k) == self._t
+            ) >= max_per_owner:
+                raise SessionLimitError
+            sid = uuid.uuid4().hex
+            self._s[sid] = (owner_id, now + self.ttl, [])
+            self._tenant_of[sid] = self._t
+        return sid
+
+    def exists(self, owner_id: str, sid: str) -> bool:
+        with self._lock:
+            return self._live(owner_id, sid) is not None
+
+    def messages(self, owner_id: str, sid: str) -> list[SessionMessage] | None:
+        with self._lock:
+            row = self._live(owner_id, sid)
+            if row is None:
+                return None
+            return [m.model_copy() for m in bound_messages(row[2], self.max_messages, self.max_tokens)]
+
+    def list_sessions(
+        self, owner_id: str, limit: int, offset: int
+    ) -> tuple[list[SessionSummary], int]:
+        """Live sessions of this owner+tenant, newest `updated_at` first, plus the total."""
+        with self._lock:
+            now = self._now()
+            rows = [
+                (sid, exp - self.ttl, msgs) for sid, (o, exp, msgs) in self._s.items()
+                if o == owner_id and exp > now and self._tenant_of.get(sid) == self._t
+            ]
+        rows.sort(key=lambda r: r[1], reverse=True)
+        page = rows[offset : offset + limit]
+        return [
+            SessionSummary(
+                session_id=sid, updated_at=upd,
+                first_question=next((m.content[:FIRST_Q_CHARS] for m in msgs if m.role == "user"), ""),
+            ) for sid, upd, msgs in page
+        ], len(rows)
+
+    def append_turn(
+        self, owner_id: str, sid: str, question: str, answer: str, citation_ids: list[str],
+    ) -> bool:
+        cap = self.max_tokens * 2
+        now = self._now()
+        with self._lock:
+            row = self._live(owner_id, sid)
+            if row is None:
+                return False
+            msgs = row[2] + [
+                SessionMessage(tenant_id=self._t, role="user", content=_clip(question, cap),
+                               created_at=now),
+                SessionMessage(tenant_id=self._t, role="assistant", content=_clip(answer, cap),
+                               citation_ids=[str(i) for i in citation_ids], created_at=now),
+            ]
+            self._s[sid] = (owner_id, now + self.ttl,
+                            bound_messages(msgs, self.max_messages, self.max_tokens))
+        return True
+
+    def delete(self, owner_id: str, sid: str) -> bool:
+        with self._lock:
+            row = self._s.get(sid)
+            if row is None or row[0] != owner_id or self._tenant_of.get(sid) != self._t:
+                return False
+            del self._s[sid]
+            self._tenant_of.pop(sid, None)
+        return True
 
 
 class SqliteSessions:
@@ -76,6 +223,10 @@ class SqliteSessions:
         self._last_purge = 0.0
         init_db(self._path, _SCHEMA)  # CREATE IF NOT EXISTS: safe on an existing registry DB
         self.purge_expired()  # at startup
+
+    def for_tenant(self, tenant_id: str) -> SqliteSessions:
+        """Legacy single-tenant store (tests/dev only): not tenant-aware, returns itself."""
+        return self
 
     def _exp(self, now: datetime) -> str:
         return (now + self.ttl).isoformat()
@@ -134,6 +285,23 @@ class SqliteSessions:
                 "JOIN sessions s ON s.session_id=m.session_id "
                 "WHERE m.session_id=? AND s.owner_id=? ORDER BY m.id", (sid, owner_id)).fetchall()
         return self._bound(rows)
+
+    def list_sessions(
+        self, owner_id: str, limit: int, offset: int
+    ) -> tuple[list[SessionSummary], int]:
+        self._maybe_purge()
+        now = _now().isoformat()
+        with connect(self._path) as c:
+            total = c.execute("SELECT count(*) FROM sessions WHERE owner_id=? AND expires_at>?",
+                              (owner_id, now)).fetchone()[0]
+            rows = c.execute(
+                "SELECT s.session_id, s.updated_at, (SELECT substr(m.content,1,?) FROM session_messages m "
+                "WHERE m.session_id=s.session_id AND m.role='user' ORDER BY m.id LIMIT 1) "
+                "FROM sessions s WHERE s.owner_id=? AND s.expires_at>? "
+                "ORDER BY s.updated_at DESC, s.session_id LIMIT ? OFFSET ?",
+                (FIRST_Q_CHARS, owner_id, now, limit, offset)).fetchall()
+        return [SessionSummary(session_id=r[0], updated_at=r[1], first_question=r[2] or "")
+                for r in rows], total
 
     def _bound(self, rows: list[tuple]) -> list[SessionMessage]:
         rows = rows[-self.max_messages:]

@@ -1,0 +1,13 @@
+{
+  "project": "DocChat RAG",
+  "integration_branch": "dev",
+  "prod_branch": "main",
+  "verify": "uv run ruff check . && uv run pytest -q",
+  "format_file": "uv run ruff format",
+  "lint_file": "uv run ruff check",
+  "code_extensions": [
+    "py"
+  ],
+  "protected_paths": [],
+  "e2e": "uv run pytest -q tests/e2e"
+}

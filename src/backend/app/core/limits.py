@@ -24,7 +24,7 @@ GLOBAL_KEY = "*"  # cannot collide with a user id (ids match [A-Za-z0-9_.@-]+)
 
 
 class SpendCapError(Exception):
-    """Daily cap reached; `scope` is "user" or "global"."""
+    """Daily cap reached; `scope` is "user", "tenant" or "global"."""
 
     def __init__(self, scope: str) -> None:
         super().__init__(scope)
@@ -105,6 +105,10 @@ class SpendStore(Protocol):
     def add(self, owner_id: str, day: str, usd: float) -> None: ...
 
 
+def tenant_key(tenant_id: str) -> str:
+    return f"#t:{tenant_id}"  # "#" is not a valid id char, so it cannot collide with a user key
+
+
 def utc_day(now: datetime | None = None) -> str:
     return (now or datetime.now(UTC)).strftime("%Y-%m-%d")
 
@@ -119,6 +123,11 @@ class Lease:
     amount: float
     headers: dict[str, str] = field(default_factory=dict)
     done: bool = False
+    tenant_key: str | None = None
+
+    @property
+    def keys(self) -> tuple[str, ...]:
+        return (self.owner, GLOBAL_KEY) + ((self.tenant_key,) if self.tenant_key else ())
 
     def finish(self, usd: float = 0.0) -> None:
         self.ledger.settle(self, usd)
@@ -135,12 +144,18 @@ class SpendLedger:
         cap_usd: float,
         *,
         global_cap_usd: float = float("inf"),
+        tenant_cap_usd: float = float("inf"),
+        tenant_caps: dict[str, tuple[float, float]] | None = None,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
-        if cap_usd <= 0 or global_cap_usd <= 0:
+        if cap_usd <= 0 or global_cap_usd <= 0 or tenant_cap_usd <= 0:
             raise ValueError("spend caps must be > 0")
         self._store, self.cap, self.global_cap = store, cap_usd, global_cap_usd
+        self.tenant_cap = tenant_cap_usd
+        self.tenant_caps = dict(tenant_caps or {})  # tenant -> (per-user cap, tenant cap) overrides
+        if any(u <= 0 or t <= 0 for u, t in self.tenant_caps.values()):
+            raise ValueError("spend caps must be > 0")
         self._now, self._clock = now, clock
         self._held: dict[str, dict[str, tuple[float, float]]] = {}  # key -> id -> (usd, t)
         self._lock = threading.Lock()
@@ -158,30 +173,40 @@ class SpendLedger:
             self._held.pop(key, None)
         return over
 
-    def acquire(self, owner: str, amount: float) -> Lease:
-        """Raises SpendCapError when spent + in-flight reservations >= cap (user or global)."""
+    def acquire(self, owner: str, amount: float, tenant: str | None = None) -> Lease:
+        """Raises SpendCapError when spent + in-flight reservations >= cap (user, tenant or global).
+
+        With `tenant`, the user key is namespaced by it (same owner id in two tenants is two users)
+        and the tenant's total is capped too."""
+        tkey = None if tenant is None else tenant_key(tenant)
+        user_cap, tenant_cap = self.tenant_caps.get(tenant or "", (self.cap, self.tenant_cap))
+        if tenant is not None:
+            owner = f"{tenant}:{owner}"
         with self._lock:
             t, day = self._clock(), utc_day(self._now())
-            if self._over(owner, self.cap, t, day):
+            if self._over(owner, user_cap, t, day):
                 raise SpendCapError("user")
+            if tkey is not None and self._over(tkey, tenant_cap, t, day):
+                raise SpendCapError("tenant")
             if self._over(GLOBAL_KEY, self.global_cap, t, day):
                 raise SpendCapError("global")
             lid, amt = uuid.uuid4().hex, max(0.0, amount)
-            for key in (owner, GLOBAL_KEY):
+            lease = Lease(self, owner, lid, amount, tenant_key=tkey)
+            for key in lease.keys:
                 self._held.setdefault(key, {})[lid] = (amt, t)
-            return Lease(self, owner, lid, amount)
+            return lease
 
     def settle(self, lease: Lease, usd: float) -> None:
         with self._lock:
             if lease.done:
                 return
             lease.done = True
-            for key in (lease.owner, GLOBAL_KEY):
+            for key in lease.keys:
                 mine = self._held.get(key, {})
                 mine.pop(lease.lease_id, None)
                 if not mine:
                     self._held.pop(key, None)
         if usd > 0 and math.isfinite(usd):
             day = utc_day(self._now())
-            self._store.add(lease.owner, day, usd)  # sync on purpose: must finish during cancel
-            self._store.add(GLOBAL_KEY, day, usd)
+            for key in lease.keys:  # sync on purpose: must finish during cancel
+                self._store.add(key, day, usd)

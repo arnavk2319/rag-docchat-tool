@@ -10,10 +10,11 @@ from pathlib import Path
 import pytest
 from app.core import llm
 from app.main import app
+from authutil import bearer
 from fastapi.testclient import TestClient
 
-A = {"X-User-Id": "alice"}
-B = {"X-User-Id": "bob"}
+A = bearer("alice")
+B = bearer("bob")
 SRC = Path(__file__).resolve().parents[1] / "src"
 
 
@@ -115,21 +116,30 @@ def test_every_v1_route_requires_auth_and_health_does_not(client):
     for path, ops in spec.items():
         if not path.startswith("/v1"):
             continue
+        if path == "/v1/auth/anonymous":
+            continue  # public mint endpoint (rate limited per IP)
         for method in ops:
             url = path.replace("{doc_id}", "x")
             r = client.request(method.upper(), url)
-            assert r.status_code == 401 and r.json()["code"] == "auth_required", (method, path)
+            assert r.status_code == 401 and r.json()["code"] == "unauthorized", (method, path)
     assert client.get("/healthz").status_code == 200
     assert client.get("/ping-checkpoint").status_code == 200
 
 
 @pytest.mark.parametrize("uid", ["a b", "aé", "x;y", "a" * 65, "a/b", "<b>"])
 def test_invalid_user_ids_rejected(client, uid):
-    try:
-        r = client.get("/v1/documents", headers={"X-User-Id": uid})
-    except UnicodeEncodeError:
-        return
-    assert r.status_code == 401 and r.json()["code"] == "invalid_user_id"
+    import json
+
+    from app.core import auth
+    from authutil import TEST_SECRET
+
+    with pytest.raises(ValueError):
+        bearer(uid)
+    # a correctly signed token with a bad sub is still rejected
+    body = auth._b64(json.dumps({"sub": uid, "tenant_id": "t1", "iat": 0, "exp": 2**40}).encode())
+    tok = f"v1.{body}.{auth._sig(TEST_SECRET, f'v1.{body}')}"
+    r = client.get("/v1/documents", headers={"Authorization": f"Bearer {tok}"})
+    assert r.status_code == 401 and r.json()["code"] == "invalid_token"
 
 
 # ---- owner isolation ----

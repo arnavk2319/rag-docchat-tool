@@ -3,10 +3,11 @@
 import pytest
 from app.core import llm
 from app.main import app
+from authutil import bearer
 from fastapi.testclient import TestClient
 
-A = {"X-User-Id": "alice"}
-B = {"X-User-Id": "bob"}
+A = bearer("alice")
+B = bearer("bob")
 
 
 @pytest.fixture
@@ -28,28 +29,28 @@ def one(c, name="a.txt", text=b"The sky is blue. Grass is green.", headers=A):
 
 
 # ---- auth ----
-@pytest.mark.parametrize("headers,code", [
-    ({}, "auth_required"),
-    ({"X-User-Id": "  "}, "auth_required"),
-    ({"X-User-Id": "a" * 65}, "invalid_user_id"),
-    ({"X-User-Id": "bad user"}, "invalid_user_id"),
-    ({"X-User-Id": "a/b"}, "invalid_user_id"),
+@pytest.mark.parametrize("headers", [
+    {},
+    {"X-User-Id": "alice"},
+    {"Authorization": "Bearer "},
+    {"Authorization": "Basic abc"},
 ])
-def test_auth_errors(client, headers, code):
+def test_auth_errors(client, headers):
     for method, url in [("get", "/v1/documents"), ("post", "/v1/query"), ("delete", "/v1/documents/x")]:
         r = getattr(client, method)(url, headers=headers)
-        assert r.status_code == 401 and r.json() == {"detail": r.json()["detail"], "code": code}
+        assert r.status_code == 401 and r.json()["code"] == "unauthorized"
 
 
 def test_valid_user_id_chars_and_max_len(client):
     for uid in ["a" * 64, "me@x.io", "u_1.2-3"]:
-        assert client.get("/v1/documents", headers={"X-User-Id": uid}).status_code == 200
+        assert client.get("/v1/documents", headers=bearer(uid)).status_code == 200
 
 
 def test_dependency_override_replaces_auth(client):
-    from app.api.deps import current_user
+    from app.api.deps import current_principal
+    from app.core.auth import Principal
 
-    app.dependency_overrides[current_user] = lambda: "carol"
+    app.dependency_overrides[current_principal] = lambda: Principal("default", "carol")
     try:
         assert client.get("/v1/documents").status_code == 200
     finally:
