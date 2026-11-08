@@ -41,3 +41,8 @@ Updated: 2026-11-07 · Mode: autopilot · Phase: P5 DONE (T-024..T-033) on dev @
 ## P6 update 2026-11-08
 - T-034..T-037 done. Design approved: docs/design/ (prototype.html). Tickets T-038..T-047 + new backend T-048 (cited passage endpoint) set to `approved` on the human's go-ahead. T-046 unblocked (T-030..T-032 done). Types generated from docs/openapi.json; span is an object.
 - HUMAN BEFORE /autopilot: add web verify to .claude/kit.json (else frontend tickets are not verified); add VITE_API_BASE_URL, VITE_MOCK to .env.example.
+
+## Autopilot P6 progress 2026-11-08
+- Done on dev: T-038 (web scaffold, cbbdc21), T-048 (chunk passage endpoint, ee3e349). Next: T-039 -> (T-040, T-041) -> T-042 -> T-043 -> T-044/T-045 -> T-046 -> T-047.
+- Backlog adds: rate-limit cheap read routes; source-pane highlight may be truncated (>4000 chars).
+- Human still: .env.example VITE_* vars, ADR-0004 accept, CI jobs, Vercel project.
