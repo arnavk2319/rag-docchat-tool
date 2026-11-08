@@ -111,3 +111,5 @@ Estimated total: 25 M x $4 + 3 L x $8 + 9 S x $1.50 = $137.50 (caps, not expecte
 - xss.test.tsx session-title positive assertion is a TODO(T-042): enable now that sessions are merged (picked up in T-044).
 - E2E mock limitation: GET /v1/sessions/:id returns 404 for sessions created during a run, so switching back shows not-found; make the mock store created sessions (T-044).
 - BACKEND (T-047 smoke): local upload of a .txt with mock LLM ended `failed`/`ingest_failed` with failure_reason "RuntimeError" (embedder unavailable without a key? undiagnosed). Diagnose before staging smoke. Also failure_reason exposes an exception class name; return a fixed code instead.
+- SECURITY (docs/security-audit-web.md, ordered): H1 upload limiter + per-owner doc cap + demo byte cap + PURGE_INTERVAL_SECONDS=3600; M1 global mint limiter + TRUSTED_PROXY hop docs; M3 map ingest failure_reason to fixed `ingest_failed`; M4 ensure public/mockServiceWorker.js is absent from prod builds; L1 backend nosniff/no-store middleware; L2 json_body_limit on compare/docintel; remove /ping-checkpoint; run pip-audit.
+
