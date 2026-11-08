@@ -54,7 +54,7 @@ API_ORIGIN=https://api-staging.example.com npm run gen:vercel -- --mock   # adds
 ## 5. Release flow
 
 1. Merge to `dev` -> Vercel builds a preview; staging alias updates.
-2. Run the smoke checklist (below) against the stable staging alias.
+2. Run the smoke checklist (below), then the scripted live check in [deploy-web-smoke.md](deploy-web-smoke.md), against the stable staging alias.
 3. Production promotion (`dev` -> `main`, production domain, production env vars, production CSP origin) is **Gate B: human only**. Agents never push to `main` or promote.
 
 ## 6. Smoke checklist

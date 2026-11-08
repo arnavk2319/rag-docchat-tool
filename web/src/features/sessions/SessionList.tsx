@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import { useNavigate } from 'react-router-dom'
 import { ApiError, GENERIC_MESSAGE } from '../../api/errors'
+import { decodeEntities } from '../../api/text'
 import { useSessions } from './hooks'
 
 /** Conversations section of the left pane. Titles are plain text children only. */
@@ -42,7 +43,7 @@ export function SessionList({ activeId }: { activeId?: string }) {
               s.session_id === activeId && 'bg-primary-soft',
             )}
           >
-            <span className="truncate font-semibold">{s.title}</span>
+            <span className="truncate font-semibold">{decodeEntities(s.title)}</span>
             <time dateTime={s.updated_at} className="text-xs text-muted">
               {new Date(s.updated_at).toLocaleString()}
             </time>

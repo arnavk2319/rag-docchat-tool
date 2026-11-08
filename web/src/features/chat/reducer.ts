@@ -111,7 +111,7 @@ export function reducer(s: ChatState, a: Action): ChatState {
       // History is plain text only; citations are not reconstructed (the API stores ids only).
       let id = 1
       const messages: Msg[] = a.messages.flatMap((m): Msg[] => {
-        if (m.role === 'user') return [{ role: 'user', id: id++, text: m.content }]
+        if (m.role === 'user') return [{ role: 'user', id: id++, text: decodeEntities(m.content) }]
         if (m.role === 'assistant') {
           return [
             {
@@ -119,7 +119,7 @@ export function reducer(s: ChatState, a: Action): ChatState {
               id: id++,
               status: 'done',
               trace: [],
-              answer: m.content,
+              answer: decodeEntities(m.content),
               citations: [],
             },
           ]

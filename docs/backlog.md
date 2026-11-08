@@ -69,7 +69,7 @@ P6 is mock-first: T-038..T-045 need no P5 work and can run in parallel with P5. 
 | T-045 | P6 | Vercel preview deploy docs | S | T-043 | done |
 | T-046 | P6 | Summary/Sentiment/Compare views behind flag (T-030/T-031/T-032 done) | L | T-041 | approved |
 | T-048 | P5 | Cited passage endpoint GET /v1/documents/{doc_id}/chunks/{chunk_id} for the source pane (needs_architect) | S | T-037 | done |
-| T-047 | P6 | Switch to real API: generated client, contract check, staging smoke | M | T-044, T-045, T-048 | approved |
+| T-047 | P6 | Switch to real API: generated client, contract check, staging smoke | M | T-044, T-045, T-048 | done |
 
 Estimated total: 25 M x $4 + 3 L x $8 + 9 S x $1.50 = $137.50 (caps, not expected spend). Previous total was $79.50; this plan adds $58.00 (P5 +4 tickets $11.00, P6 10 tickets $47.00).
 
@@ -110,3 +110,4 @@ Estimated total: 25 M x $4 + 3 L x $8 + 9 S x $1.50 = $137.50 (caps, not expecte
 - Sessions (T-042 review nits): aborting right after session create leaves an empty "New conversation" in the list; restored history has no citation chips (API stores only ids); no delete-conversation UI.
 - xss.test.tsx session-title positive assertion is a TODO(T-042): enable now that sessions are merged (picked up in T-044).
 - E2E mock limitation: GET /v1/sessions/:id returns 404 for sessions created during a run, so switching back shows not-found; make the mock store created sessions (T-044).
+- BACKEND (T-047 smoke): local upload of a .txt with mock LLM ended `failed`/`ingest_failed` with failure_reason "RuntimeError" (embedder unavailable without a key? undiagnosed). Diagnose before staging smoke. Also failure_reason exposes an exception class name; return a fixed code instead.

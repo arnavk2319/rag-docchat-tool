@@ -9,6 +9,16 @@ const MESSAGES: Record<string, string> = {
   llm_unavailable: 'The language model is unavailable right now. Please try again shortly.',
   llm_bad_output: 'The model returned an unusable answer. Please try again.',
   document_busy: 'This document is still being processed. Try again in a moment.',
+  unauthorized: 'Authentication is required.',
+  global_rate_limited: 'The service is busy right now. Please try again shortly.',
+  global_spend_cap_exceeded:
+    'The demo has reached its daily spend limit. Please try again tomorrow.',
+  tenant_spend_cap_exceeded:
+    'Your organization reached its daily spend limit. Please try again tomorrow.',
+  session_limit_exceeded: 'You have too many conversations. Delete one to start a new one.',
+  bad_request: 'The request was not valid.',
+  conflict: 'That action clashes with the current state. Please try again.',
+  method_not_allowed: 'That action is not supported.',
   auth_required: 'Authentication is required.',
   auth_failed: 'Your session could not be renewed. Reload the page to start a new one.',
   token_expired: 'Your session expired.',
