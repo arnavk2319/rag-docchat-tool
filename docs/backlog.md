@@ -66,7 +66,7 @@ P6 is mock-first: T-038..T-045 need no P5 work and can run in parallel with P5. 
 | T-042 | P6 | Sessions list and switch | S | T-041 | done |
 | T-043 | P6 | Safe rendering, CSP + vercel.json hardening, XSS component test | M | T-040, T-041 | done |
 | T-044 | P6 | Playwright E2E in mock mode | M | T-042, T-043 | approved |
-| T-045 | P6 | Vercel preview deploy docs | S | T-043 | approved |
+| T-045 | P6 | Vercel preview deploy docs | S | T-043 | done |
 | T-046 | P6 | Summary/Sentiment/Compare views behind flag (T-030/T-031/T-032 done) | L | T-041 | approved |
 | T-048 | P5 | Cited passage endpoint GET /v1/documents/{doc_id}/chunks/{chunk_id} for the source pane (needs_architect) | S | T-037 | done |
 | T-047 | P6 | Switch to real API: generated client, contract check, staging smoke | M | T-044, T-045, T-048 | approved |

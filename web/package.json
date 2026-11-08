@@ -15,6 +15,7 @@
     "format": "prettier --write .",
     "test": "vitest",
     "gen:vercel": "node scripts/gen-vercel-json.mjs",
+    "check:vercel": "node scripts/check-vercel-json.mjs",
     "gen:api": "openapi-typescript ../docs/openapi.json -o src/api/schema.d.ts",
     "dev:mock": "msw init public --no-save && VITE_MOCK=1 vite",
     "build:mock": "msw init public --no-save && tsc --noEmit && VITE_MOCK=1 vite build",
