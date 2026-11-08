@@ -1,19 +1,15 @@
-import { createBrowserRouter, createMemoryRouter, Navigate, Outlet } from 'react-router-dom'
+import { createBrowserRouter, createMemoryRouter, Navigate } from 'react-router-dom'
 import type { RouteObject } from 'react-router-dom'
-import Chat from './pages/Chat'
-import Documents from './pages/Documents'
+import AppProviders from './AppProviders'
 
+// Both routes render the same three-pane shell; /documents just opens on the Documents tab.
 export const routes: RouteObject[] = [
+  { index: true, element: <Navigate to="/documents" replace /> },
   {
-    element: (
-      <main className="mx-auto max-w-[1320px] p-4">
-        <Outlet />
-      </main>
-    ),
+    element: <AppProviders />,
     children: [
-      { index: true, element: <Navigate to="/documents" replace /> },
-      { path: '/documents', element: <Documents /> },
-      { path: '/chat/:sessionId?', element: <Chat /> },
+      { path: '/documents', element: null },
+      { path: '/chat/:sessionId?', element: null },
     ],
   },
 ]
