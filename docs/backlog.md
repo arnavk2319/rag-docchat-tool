@@ -60,7 +60,7 @@ P6 is mock-first: T-038..T-045 need no P5 work and can run in parallel with P5. 
 | T-036 | P5 | Anonymous document/session TTL cleanup | S | T-027, T-034 | approved |
 | T-037 | P5 | Chunk-level Citation in agent stream events (needs_architect; eval: citation validity) | M | T-032 | approved |
 | T-038 | P6 | web/ scaffold: Vite+React+TS, tooling, pinned deps, verify command (needs_architect) | M | - | done |
-| T-039 | P6 | Typed contract, API client, token module, MSW mock handlers | L | T-038 | approved |
+| T-039 | P6 | Typed contract, API client, token module, MSW mock handlers | L | T-038 | done |
 | T-040 | P6 | Documents page: upload, list, delete, per-file errors | M | T-039 | approved |
 | T-041 | P6 | SSE client + Chat page: steps, tokens, citations, stop reasons, abstain | L | T-039 | approved |
 | T-042 | P6 | Sessions list and switch | S | T-041 | approved |
@@ -103,3 +103,5 @@ Estimated total: 25 M x $4 + 3 L x $8 + 9 S x $1.50 = $137.50 (caps, not expecte
 - Security audit follow-ups (docs/security-audit.md): B-1 real auth; H-1 upload limits/quotas; H-2 streaming body-size middleware; H-3 zip/parse hardening and timeouts; H-4 CORS/security headers; H-5 disable docs/trim healthz in prod; M-3 fail closed on unknown model price; L-1 tracemalloc; L-2 delete load_xls; L-4 periodic session purge; L-5 pin HF model revisions.
 - Rate-limit cheap read routes (GET /v1/documents*, GET /v1/documents/{doc_id}/chunks/{chunk_id}) per user, since only /query and /summarize are limited today (found in T-048 review).
 - Source-pane UI: chunk passages over 4000 chars are clipped server-side, so treat the highlight as possibly truncated (T-048 review nit).
+- Drop web/.npmrc legacy-peer-deps=true once openapi-typescript supports TS 6 (or pin TS 5.x); re-run npm ci and review the peer warnings it was hiding (T-039 review).
+- web auth nits (T-039 review): client.ts clear the token on 401 only if the stored token still equals the failed one (avoid double mint); token.ts read() should fall back to in-memory token when setItem threw; main.tsx catch worker.start() rejection and render anyway; reword garbled hygiene test title.

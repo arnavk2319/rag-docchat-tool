@@ -23,4 +23,14 @@ eslint 10.14.0, @eslint/js 10.0.1, typescript-eslint 8.72.1, eslint-plugin-react
 eslint-plugin-react-refresh 0.5.7, globals 17.14.0, prettier 3.9.10,
 @types/react 19.3.0, @types/react-dom 19.3.0, @types/node 22.20.5.
 
-Deferred to later tickets (not installed here): @tanstack/react-query, openapi-fetch, openapi-typescript, msw, @playwright/test.
+Added in T-039 (exact): @tanstack/react-query 5.107.1, openapi-fetch 0.17.0 (runtime); openapi-typescript 7.13.0, msw 3.0.4 (dev).
+openapi-typescript declares peer `typescript@^5.x` while the repo uses 6.0.3, so `web/.npmrc` sets `legacy-peer-deps=true` (needed for `npm ci`). Remove it once openapi-typescript's peer range accepts TypeScript 6 (or if the repo pins TS 5.x).
+
+Deferred to later tickets (not installed here): @playwright/test.
+
+## API contract and mocks (T-039)
+
+- `npm run gen:api` regenerates `src/api/schema.d.ts` from `../docs/openapi.json` (commit the result; drift check = regen then `git diff --exit-code src/api`).
+- `src/api/contract.ts` re-exports named types plus the SSE event union (SSE is not in OpenAPI).
+- `src/auth/token.ts` owns the token (sessionStorage), mint endpoint and header; `src/api/client.ts` adds auth and the 401 re-mint-once logic.
+- Mock mode: `npm run dev:mock` / `npm run build:mock` copy the MSW worker into `public/` (git-ignored) and set `VITE_MOCK=1`. Plain `npm run build` deletes it first so no mock code ships. Mock question keywords select SSE scenarios: `abstained`, `max_steps`, `max_tokens`, `max_usd`, `error`; default is `done`.
