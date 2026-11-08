@@ -68,7 +68,7 @@ P6 is mock-first: T-038..T-045 need no P5 work and can run in parallel with P5. 
 | T-044 | P6 | Playwright E2E in mock mode | M | T-042, T-043 | approved |
 | T-045 | P6 | Vercel preview deploy docs | S | T-043 | approved |
 | T-046 | P6 | Summary/Sentiment/Compare views behind flag (T-030/T-031/T-032 done) | L | T-041 | approved |
-| T-048 | P5 | Cited passage endpoint GET /v1/documents/{doc_id}/chunks/{chunk_id} for the source pane (needs_architect) | S | T-037 | approved |
+| T-048 | P5 | Cited passage endpoint GET /v1/documents/{doc_id}/chunks/{chunk_id} for the source pane (needs_architect) | S | T-037 | done |
 | T-047 | P6 | Switch to real API: generated client, contract check, staging smoke | M | T-044, T-045, T-048 | approved |
 
 Estimated total: 25 M x $4 + 3 L x $8 + 9 S x $1.50 = $137.50 (caps, not expected spend). Previous total was $79.50; this plan adds $58.00 (P5 +4 tickets $11.00, P6 10 tickets $47.00).
@@ -101,3 +101,5 @@ Estimated total: 25 M x $4 + 3 L x $8 + 9 S x $1.50 = $137.50 (caps, not expecte
 - T-021 re-review approved (round 2). Nits: link-opener floods (![]( repeated) cost up to ~120 ms per 20k call, lower the _IMAGE/_LINK target cap or short-circuit when no ) exists; tools.wrap can leave a harmless partial entity after truncation; homoglyph role words and plain-language social engineering remain known gaps.
 - T-022 follow-ups: per-IP rate limit (needs a trusted proxy; the mint limit in T-034 covers `/v1/auth/anonymous` only); upload rate limit and stored-documents cap per owner; shared (Redis) limiter state for multi-worker.
 - Security audit follow-ups (docs/security-audit.md): B-1 real auth; H-1 upload limits/quotas; H-2 streaming body-size middleware; H-3 zip/parse hardening and timeouts; H-4 CORS/security headers; H-5 disable docs/trim healthz in prod; M-3 fail closed on unknown model price; L-1 tracemalloc; L-2 delete load_xls; L-4 periodic session purge; L-5 pin HF model revisions.
+- Rate-limit cheap read routes (GET /v1/documents*, GET /v1/documents/{doc_id}/chunks/{chunk_id}) per user, since only /query and /summarize are limited today (found in T-048 review).
+- Source-pane UI: chunk passages over 4000 chars are clipped server-side, so treat the highlight as possibly truncated (T-048 review nit).

@@ -45,6 +45,61 @@
         "title": "Body_upload_documents_v1_documents_post",
         "type": "object"
       },
+      "ChunkPassage": {
+        "description": "Parent passage text (data, never markup) with the cited chunk's offsets inside it.",
+        "properties": {
+          "chunk_id": {
+            "title": "Chunk Id",
+            "type": "string"
+          },
+          "doc_id": {
+            "title": "Doc Id",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "highlight": {
+            "$ref": "#/components/schemas/Highlight"
+          },
+          "page": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page"
+          },
+          "sheet": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sheet"
+          },
+          "text": {
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "doc_id",
+          "chunk_id",
+          "filename",
+          "text",
+          "highlight"
+        ],
+        "title": "ChunkPassage",
+        "type": "object"
+      },
       "Citation": {
         "properties": {
           "chunk_id": {
@@ -381,6 +436,24 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "Highlight": {
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "integer"
+          },
+          "start": {
+            "title": "Start",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
+        "title": "Highlight",
         "type": "object"
       },
       "QueryRequest": {
@@ -1369,6 +1442,110 @@
           }
         },
         "summary": "Get Document",
+        "tags": [
+          "documents"
+        ]
+      }
+    },
+    "/v1/documents/{doc_id}/chunks/{chunk_id}": {
+      "get": {
+        "description": "Parent passage containing a cited chunk. Every miss is 404 (never 403).",
+        "operationId": "get_chunk_passage_v1_documents__doc_id__chunks__chunk_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "doc_id",
+            "required": true,
+            "schema": {
+              "title": "Doc Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "chunk_id",
+            "required": true,
+            "schema": {
+              "title": "Chunk Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          },
+          {
+            "in": "header",
+            "name": "x-on-behalf-of",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-On-Behalf-Of"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChunkPassage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Chunk Passage",
         "tags": [
           "documents"
         ]
