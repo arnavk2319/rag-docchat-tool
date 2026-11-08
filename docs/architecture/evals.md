@@ -18,6 +18,7 @@ The model is a deterministic stand-in policy scripted into the real agent graph 
 | Answer | faithfulness | judge score: share of answer content words supported by tool evidence; abstentions excluded |
 | Answer | relevance | judge score: question keywords covered by the answer (table: plus the query_table op); correct abstention on out-of-corpus = 1 |
 | Answer | citation_correct | deterministic: cited doc ids equal the gold docs (no extras); factual items also need the cited span to be the gold page |
+| Stream citations (mock) | citation_validity | share of chunk-level stream citations (production builder) whose chunk_id exists in the caller's corpus and whose span sits inside the stored chunk/parent bounds; abstentions excluded |
 | Agent | task_success | deterministic: no bounded stop, `answer_contains` present and gold docs cited; out-of-corpus: "I don't know." with no citations |
 | Agent | avg steps, tool-call accuracy, loop rate | graph steps per run; share of tool calls with the expected tool and status ok; share of runs that hit a bound or repeated an identical call |
 | Perf | p50/p95 latency, tokens, USD per request | wall time of `run_agent`; mock token counts and price table (not real) |

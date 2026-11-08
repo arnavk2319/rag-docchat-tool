@@ -23,6 +23,7 @@ Safety
 - The model never sets `owner_id`: it comes only from `ToolContext`; args models are `extra="forbid"`.
 - Tool results are escaped and wrapped by `run_tool`; prompts mark them as data. `run_tool` is sync and runs via
   `asyncio.to_thread`.
+- Chunk ids are noted out-of-band by `search_documents`/`get_page_or_section` (`ToolContext.surfaced_chunks`) and only feed the SSE chunk-level citations after a store re-read (T-037); `AgentResult.citations` stays doc-level.
 - Citations = doc ids the answer names that also appear in a tool-result header (`[doc_id=... ]` at line start).
   No evidence (`no results`, errors) -> "I don't know." with no answer LLM call.
 

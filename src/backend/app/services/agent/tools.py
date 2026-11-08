@@ -55,12 +55,18 @@ class ToolContext:
     min_rerank_score: float = 0.0
     table_loader: Callable[[str, str], bytes | None] | None = None  # (owner_id, doc_id) -> raw file
     surfaced: dict[str, str] = field(default_factory=dict)  # doc_id -> span; set by tool code only
+    surfaced_chunks: dict[str, str] = field(default_factory=dict)  # chunk_id -> doc_id; tool code only
     budget: llm.Budget | None = None  # per-run agent budget; LLM calls inside tools are charged to it
 
 
 def _note(ctx: ToolContext, doc_id: str, span: str = "") -> None:
     """Record (out-of-band) that a tool surfaced this registry/parent-backed doc id."""
     ctx.surfaced.setdefault(doc_id, span)
+
+
+def _note_chunk(ctx: ToolContext, chunk_id: str, doc_id: str) -> None:
+    """Record (out-of-band) a retrieved chunk/parent id; the citation is rebuilt from stored records."""
+    ctx.surfaced_chunks.setdefault(chunk_id, doc_id)
 
 
 def wrap(body: str, ok: bool = True) -> str:
@@ -161,6 +167,7 @@ def _search(ctx: ToolContext, a: SearchArgs) -> str:
         loc = f"page {p.page}" if p.page is not None else (f"sheet {p.sheet}" if p.sheet else "")
         snippet = (h.text if h else p.text)[:MAX_SNIPPET_CHARS]
         _note(ctx, p.doc_id, loc)
+        _note_chunk(ctx, h.chunk_id if h else p.parent_id, p.doc_id)
         out.append(
             f'[doc_id={p.doc_id} file={names.get(p.doc_id, "")} {loc} '
             f'section={p.section} score={score:.3f}]\n{snippet}'
@@ -200,6 +207,8 @@ def _get_page(ctx: ToolContext, a: GetPageArgs) -> str:
     if not ps:
         return wrap(NOT_FOUND, ok=False)
     _note(ctx, a.doc_id, f"page {a.page}" if a.page is not None else (a.section or ""))
+    for p in ps[:3]:  # the parents actually returned (first few; the text is capped anyway)
+        _note_chunk(ctx, p.parent_id, a.doc_id)
     return wrap("\n\n".join(p.text for p in ps))
 
 

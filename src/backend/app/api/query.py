@@ -50,7 +50,11 @@ IDK = "I don't know."
     dependencies=[Depends(json_body_limit)],
     description=(
         "Answer a question with citations. With `stream=true` the response is Server-Sent Events "
-        "(`text/event-stream`, `Cache-Control: no-cache`, `X-Accel-Buffering: no`)."
+        "(`text/event-stream`, `Cache-Control: no-cache`, `X-Accel-Buffering: no`). "
+        "Events: step, tool_call, tool_result, token, citations, error, final. `citations` and `final` "
+        "carry chunk-level `Citation` objects `{doc_id, filename, chunk_id, page|sheet, "
+        "span{char_start,char_end}}` built server-side from stored records; `final` adds answer, "
+        "abstained, stopped_reason, usage, session_id."
     ),
     responses={
         200: {"content": {"text/event-stream": {"schema": {"type": "string"}}},

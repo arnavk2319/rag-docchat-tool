@@ -389,6 +389,31 @@ async def judge(metric: str, q: str, evidence: str, answer: str, mock_score: flo
     return score
 
 
+def chunk_validity(ctx: Any, r: Any, doc_names: dict[str, str]) -> float | None:
+    """Share of stream citations whose chunk exists in the caller's corpus with an in-bounds span.
+
+    Built by the production builder, then re-checked against the stored records (child span must
+    sit inside its parent's span; a parent citation must equal the stored parent span). MOCK-labelled."""
+    from app.api.sse import build_citations
+
+    cites = build_citations(ctx, r, doc_names)
+    if not cites:
+        return None
+    ok = 0
+    for c in cites:
+        hit = next(iter(ctx.vectors.get(ctx.owner_id, [c.chunk_id])), None)
+        if hit is not None:
+            par = next(iter(ctx.parents.get_parents(ctx.owner_id, [str(hit.metadata.get("parent_id"))])), None)
+            lo, hi = (par.char_start, par.char_end) if par else (0, -1)
+            doc = str(hit.metadata.get("doc_id"))
+        else:
+            par = next(iter(ctx.parents.get_parents(ctx.owner_id, [c.chunk_id])), None)
+            lo, hi = (par.char_start, par.char_end) if par else (0, -1)
+            doc = par.doc_id if par else ""
+        ok += doc == c.doc_id and lo <= c.span.char_start <= c.span.char_end <= hi
+    return ok / len(cites)
+
+
 async def run_items(ctx: Any, ids: dict[str, str], golden: list[dict[str, Any]], scripted: bool,
                     cache: dict[str, float], spend: list[float]) -> list[dict[str, Any]]:
     from app.core import llm
@@ -412,6 +437,7 @@ async def run_items(ctx: Any, ids: dict[str, str], golden: list[dict[str, Any]],
         ans, gold = r.answer.strip(), item["gold"]
         abstained = ans == NOANS
         cited = {names[c["doc_id"]] for c in r.citations}
+        cvalid = None if item["abstain"] else chunk_validity(ctx, r, names)
         gold_docs = {g["doc"] for g in gold}
         done = not r.bounded_stop
         if item["abstain"]:
@@ -430,6 +456,7 @@ async def run_items(ctx: Any, ids: dict[str, str], golden: list[dict[str, Any]],
         rel_mock = (1.0 if abstained else 0.0) if item["abstain"] else (0.0 if abstained else min(1.0, overlap / 0.3))
         row = {
             "id": item["id"], "type": item["type"], "success": success, "citation_ok": cite_ok,
+            "chunk_valid": cvalid,
             "abstained": abstained, "steps": r.steps, "tool_calls": r.tool_calls,
             "stop_reason": r.stop_reason, "latency_s": latency, "tokens": r.tokens, "usd": r.usd,
             "tool_ok": [t == item["expected_tool"] and 'status="ok"' in res.split("\n", 1)[0]
@@ -486,6 +513,7 @@ async def compute(mode: str) -> dict[str, Any]:
         cache_path.write_text(json.dumps(cache))
     cit = [r["citation_ok"] for r in rows if r["citation_ok"] is not None]
     faith = [r["faithfulness"] for r in rows if r["faithfulness"] is not None]
+    cv = [r["chunk_valid"] for r in rows if r["chunk_valid"] is not None]
     toolok = [x for r in rows for x in r["tool_ok"]]
     ooc = [r for r in rows if r["type"] == "out_of_corpus"]
     metrics = {
@@ -495,6 +523,7 @@ async def compute(mode: str) -> dict[str, Any]:
         "faithfulness": M.mean(faith),
         "relevance": M.mean([r["relevance"] for r in rows]),
         "citation_correct": M.mean([float(c) for c in cit]),
+        "citation_validity": M.mean(cv),
         "abstain_accuracy": M.mean([float(r["success"]) for r in ooc]),
         "task_success": M.mean([float(r["success"]) for r in rows]),
         "tool_call_accuracy": M.mean([float(x) for x in toolok]),

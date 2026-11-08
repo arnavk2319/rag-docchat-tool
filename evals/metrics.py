@@ -12,6 +12,7 @@ RULES: list[tuple[str, str, str, str]] = [
     ("faithfulness", "answer", "faithfulness", ">="),
     ("relevance", "answer", "relevance", ">="),
     ("citation_correct", "answer", "citation_correct", ">="),
+    ("citation_validity", "stream_citations", "citation_validity", ">="),
     ("task_success", "agent", "task_success", ">="),
     ("avg_steps", "agent", "max_avg_steps", "<="),
     ("injection_block_rate", "safety", "injection_block_rate", ">="),

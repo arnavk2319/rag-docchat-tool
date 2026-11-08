@@ -27,6 +27,7 @@ from ..core.llm import Budget
 from ..core.security import sanitize_output
 from ..services.agent.graph import AgentResult, run_agent
 from ..services.agent.tools import TOOLS, ToolContext, escape
+from .schemas import Citation, Span
 
 log = logging.getLogger("app.sse")
 HEARTBEAT_S = 15.0
@@ -105,6 +106,58 @@ def sanitize(name: str, p: dict[str, Any], allowed: set[str]) -> dict[str, Any]:
             "n_items": _n_items(res),
         }
     return {}
+
+
+MAX_STREAM_CITATIONS = 8
+
+
+def build_citations(ctx: ToolContext, res: AgentResult, names: dict[str, str]) -> list[Citation]:
+    """Chunk-level citations from STORED records only (sync; call via a thread).
+
+    Candidates are chunk ids a tool surfaced for a doc the answer names (T-016 guarantee). Each is
+    re-read tenant-scoped from the vector store (child) or parent store; unknown ids, other-owner or
+    out-of-scope docs are dropped, so a model-fabricated id can never appear. A named doc with no
+    surfaced chunk falls back to its first stored parent."""
+    out: list[Citation] = []
+    seen: set[str] = set()
+
+    def add(cid: str, doc_id: str, page: Any, sheet: Any, a: Any, b: Any) -> None:
+        if cid in seen or doc_id not in names or len(out) >= MAX_STREAM_CITATIONS:
+            return
+        seen.add(cid)
+        out.append(Citation(
+            doc_id=doc_id, filename=names[doc_id], chunk_id=cid,
+            page=int(page) if page is not None else None,
+            sheet=str(sheet) if sheet is not None else None,
+            span=Span(char_start=int(a or 0), char_end=int(b or 0))))
+
+    for cid, doc_id in res.cited_chunks.items():
+        hit = next(iter(ctx.vectors.get(ctx.owner_id, [cid])), None)
+        if hit is not None and str(hit.metadata.get("doc_id")) == doc_id:
+            m = hit.metadata
+            add(cid, doc_id, m.get("page"), m.get("sheet"), m.get("char_start"), m.get("char_end"))
+            continue
+        par = next(iter(ctx.parents.get_parents(ctx.owner_id, [cid])), None)
+        if par is not None and par.doc_id == doc_id:
+            add(cid, doc_id, par.page, par.sheet, par.char_start, par.char_end)
+    have = {c.doc_id for c in out}
+    for c in res.citations:
+        d = c["doc_id"]
+        if d in have or d not in names:
+            continue
+        first = next(iter(ctx.parents.list_doc_parents(ctx.owner_id, d)), None)
+        if first is not None:
+            add(first.parent_id, d, first.page, first.sheet, first.char_start, first.char_end)
+    return out
+
+
+def wire_citation(c: Citation) -> dict[str, Any]:
+    """Citation -> stream payload; every text field passes the shared escape pipeline."""
+    return {
+        "doc_id": escape(c.doc_id), "filename": escape(c.filename), "chunk_id": escape(c.chunk_id),
+        "page": c.page, "sheet": escape(c.sheet) if c.sheet is not None else None,
+        "span": {"char_start": c.span.char_start, "char_end": c.span.char_end},
+    }
 
 
 def stop_reason(r: AgentResult) -> str:
@@ -230,16 +283,18 @@ async def _stream_agent(
         text = sanitize_output(res.answer)
         for piece in _WORDS.findall(text):
             yield ev("token", {"text": piece})
-        cites = [
-            {"doc_id": c["doc_id"], "filename": escape(names[c["doc_id"]]), "span": sanitize_output(c["span"])}
-            for c in res.citations if c["doc_id"] in allowed
-        ]
+        try:
+            built = await asyncio.to_thread(build_citations, ctx, res, names)
+        except Exception as e:  # noqa: BLE001 - a store fault must not break a finished answer
+            log.error("citation build failed", extra={"run_id": run_id, "kind": type(e).__name__})
+            built = []
+        cites = [wire_citation(c) for c in built]
         yield ev("citations", {"citations": cites})
         usage = {"steps": res.steps, "tokens": res.tokens, "usd": round(res.usd, 6)}
         stopped = stop_reason(res)
         if stopped == "done" and on_complete is not None:
             try:  # memory is best-effort: a store fault must not break a finished answer
-                await on_complete(res.answer, [c["doc_id"] for c in cites])
+                await on_complete(res.answer, list(dict.fromkeys(c["doc_id"] for c in cites)))
             except Exception as e:  # noqa: BLE001
                 log.error("session store failed", extra={"run_id": run_id, "kind": type(e).__name__})
         if stopped == "error":

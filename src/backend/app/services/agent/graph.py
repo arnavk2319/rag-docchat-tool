@@ -33,6 +33,7 @@ MAX_QUESTION_CHARS = 2000
 class AgentResult:
     answer: str
     citations: list[dict[str, str]] = field(default_factory=list)
+    cited_chunks: dict[str, str] = field(default_factory=dict)  # chunk_id -> doc_id (named docs only)
     steps: int = 0
     tool_calls: int = 0
     stop_reason: str = ""  # "" = completed, else budget | max_steps | llm_error
@@ -162,9 +163,12 @@ async def run_agent(
     ans = last.get("answer", "") or (nodes._stopped(stop) if stop else "")
     if stop == "max_steps":
         ans = nodes._stopped(stop)
+    cites = nodes.citations(ans, last.get("surfaced", {}))
+    named = {c["doc_id"] for c in cites}
     return AgentResult(
         answer=ans,
-        citations=nodes.citations(ans, last.get("surfaced", {})),
+        citations=cites,
+        cited_chunks={c: d for c, d in last.get("surfaced_chunks", {}).items() if d in named},
         steps=min(last.get("steps", 0), max_steps),
         tool_calls=last.get("tool_calls", 0),
         stop_reason=stop,

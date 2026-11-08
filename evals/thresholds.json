@@ -16,6 +16,10 @@
     "p95_latency_s": 8,
     "max_usd_per_request": 0.05
   },
+  "stream_citations": {
+    "_label": "mock",
+    "citation_validity": 0.95
+  },
   "doc_intel": {
     "_label": "mock",
     "citation_present": 0.95,
