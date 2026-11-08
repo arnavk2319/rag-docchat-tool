@@ -59,7 +59,7 @@ P6 is mock-first: T-038..T-045 need no P5 work and can run in parallel with P5. 
 | T-035 | P5 | GET /v1/sessions list + GET /v1/sessions/{id} messages (needs_architect) | S | T-026, T-028 | approved |
 | T-036 | P5 | Anonymous document/session TTL cleanup | S | T-027, T-034 | approved |
 | T-037 | P5 | Chunk-level Citation in agent stream events (needs_architect; eval: citation validity) | M | T-032 | approved |
-| T-038 | P6 | web/ scaffold: Vite+React+TS, tooling, pinned deps, verify command (needs_architect) | M | - | approved |
+| T-038 | P6 | web/ scaffold: Vite+React+TS, tooling, pinned deps, verify command (needs_architect) | M | - | done |
 | T-039 | P6 | Typed contract, API client, token module, MSW mock handlers | L | T-038 | approved |
 | T-040 | P6 | Documents page: upload, list, delete, per-file errors | M | T-039 | approved |
 | T-041 | P6 | SSE client + Chat page: steps, tokens, citations, stop reasons, abstain | L | T-039 | approved |
