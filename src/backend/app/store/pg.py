@@ -17,9 +17,11 @@ from typing import Any
 from app.core.llm import _approx_tokens
 from app.store.registry import _STATUSES, Document, Status
 from app.store.sessions import (
+    FIRST_Q_CHARS,
     PURGE_EVERY_S,
     SessionLimitError,
     SessionMessage,
+    SessionSummary,
     _clip,
     bound_messages,
 )
@@ -217,6 +219,26 @@ class PostgresSessions:
             for r in rows
         ]
         return bound_messages(msgs, self.max_messages, self.max_tokens)
+
+    def list_sessions(
+        self, owner_id: str, limit: int, offset: int
+    ) -> tuple[list[SessionSummary], int]:
+        self._maybe_purge()
+        with self._pool.connection() as c:
+            total = c.execute(
+                "SELECT count(*) FROM sessions WHERE tenant_id=%s AND owner_id=%s AND expires_at > now()",
+                (self._t, owner_id),
+            ).fetchone()[0]
+            rows = c.execute(
+                "SELECT s.session_id, s.updated_at, (SELECT left(m.content, %s) FROM session_messages m "
+                "WHERE m.tenant_id=%s AND m.owner_id=%s AND m.session_id=s.session_id AND m.role='user' "
+                "ORDER BY m.id LIMIT 1) FROM sessions s "
+                "WHERE s.tenant_id=%s AND s.owner_id=%s AND s.expires_at > now() "
+                "ORDER BY s.updated_at DESC, s.session_id LIMIT %s OFFSET %s",
+                (FIRST_Q_CHARS, self._t, owner_id, self._t, owner_id, limit, offset),
+            ).fetchall()
+        return [SessionSummary(session_id=r[0], updated_at=r[1], first_question=r[2] or "")
+                for r in rows], total
 
     def append_turn(
         self, owner_id: str, sid: str, question: str, answer: str, citation_ids: list[str],

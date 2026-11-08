@@ -116,6 +116,17 @@ class SessionMessageOut(BaseModel):
     created_at: datetime
 
 
+class SessionListItem(BaseModel):
+    session_id: str
+    title: str
+    updated_at: datetime
+
+
+class SessionList(BaseModel):
+    items: list[SessionListItem]
+    total: int
+
+
 class SessionOut(BaseModel):
     session_id: str
     messages: list[SessionMessageOut]

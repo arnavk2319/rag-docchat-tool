@@ -61,6 +61,15 @@ class SessionMessage(BaseModel):
     created_at: datetime
 
 
+class SessionSummary(BaseModel):
+    session_id: str
+    first_question: str = ""
+    updated_at: datetime
+
+
+FIRST_Q_CHARS = 200  # store-side cap; the API truncates further for the title
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
@@ -77,6 +86,9 @@ class SessionStore(Protocol):
     def create(self, owner_id: str, max_per_owner: int | None = None) -> str: ...
     def exists(self, owner_id: str, sid: str) -> bool: ...
     def messages(self, owner_id: str, sid: str) -> list[SessionMessage] | None: ...
+    def list_sessions(
+        self, owner_id: str, limit: int, offset: int
+    ) -> tuple[list[SessionSummary], int]: ...
     def append_turn(
         self, owner_id: str, sid: str, question: str, answer: str, citation_ids: list[str]
     ) -> bool: ...
@@ -150,6 +162,25 @@ class InMemorySessions:
             if row is None:
                 return None
             return [m.model_copy() for m in bound_messages(row[2], self.max_messages, self.max_tokens)]
+
+    def list_sessions(
+        self, owner_id: str, limit: int, offset: int
+    ) -> tuple[list[SessionSummary], int]:
+        """Live sessions of this owner+tenant, newest `updated_at` first, plus the total."""
+        with self._lock:
+            now = self._now()
+            rows = [
+                (sid, exp - self.ttl, msgs) for sid, (o, exp, msgs) in self._s.items()
+                if o == owner_id and exp > now and self._tenant_of.get(sid) == self._t
+            ]
+        rows.sort(key=lambda r: r[1], reverse=True)
+        page = rows[offset : offset + limit]
+        return [
+            SessionSummary(
+                session_id=sid, updated_at=upd,
+                first_question=next((m.content[:FIRST_Q_CHARS] for m in msgs if m.role == "user"), ""),
+            ) for sid, upd, msgs in page
+        ], len(rows)
 
     def append_turn(
         self, owner_id: str, sid: str, question: str, answer: str, citation_ids: list[str],
@@ -254,6 +285,23 @@ class SqliteSessions:
                 "JOIN sessions s ON s.session_id=m.session_id "
                 "WHERE m.session_id=? AND s.owner_id=? ORDER BY m.id", (sid, owner_id)).fetchall()
         return self._bound(rows)
+
+    def list_sessions(
+        self, owner_id: str, limit: int, offset: int
+    ) -> tuple[list[SessionSummary], int]:
+        self._maybe_purge()
+        now = _now().isoformat()
+        with connect(self._path) as c:
+            total = c.execute("SELECT count(*) FROM sessions WHERE owner_id=? AND expires_at>?",
+                              (owner_id, now)).fetchone()[0]
+            rows = c.execute(
+                "SELECT s.session_id, s.updated_at, (SELECT substr(m.content,1,?) FROM session_messages m "
+                "WHERE m.session_id=s.session_id AND m.role='user' ORDER BY m.id LIMIT 1) "
+                "FROM sessions s WHERE s.owner_id=? AND s.expires_at>? "
+                "ORDER BY s.updated_at DESC, s.session_id LIMIT ? OFFSET ?",
+                (FIRST_Q_CHARS, owner_id, now, limit, offset)).fetchall()
+        return [SessionSummary(session_id=r[0], updated_at=r[1], first_question=r[2] or "")
+                for r in rows], total
 
     def _bound(self, rows: list[tuple]) -> list[SessionMessage]:
         rows = rows[-self.max_messages:]
