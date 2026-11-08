@@ -69,6 +69,11 @@ class Settings(BaseSettings):
     anon_tenant_daily_usd_cap: float = Field(default=1.0, gt=0)  # env ANON_TENANT_DAILY_USD_CAP whole demo tenant
     trusted_proxy: str = ""  # env TRUSTED_PROXY: header carrying the client IP (e.g. X-Forwarded-For); empty = ignore headers
 
+    anon_data_ttl_hours: float = Field(default=24.0, gt=0)  # env ANON_DATA_TTL_HOURS; anonymous docs older than this are purged
+    purge_interval_seconds: int = Field(default=0, ge=0)  # env PURGE_INTERVAL_SECONDS; background purge loop, 0 = off
+    purge_on_start: bool = False  # env PURGE_ON_START; one purge pass at startup
+    purge_batch_size: int = Field(default=200, gt=0)  # env PURGE_BATCH_SIZE; max docs deleted per run
+
     @field_validator("demo_tenant_id")
     @classmethod
     def _demo_tenant(cls, v: str) -> str:

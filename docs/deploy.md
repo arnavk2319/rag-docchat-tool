@@ -61,6 +61,7 @@ Secrets are set in the platform secret store, never in the repo or image. Human 
 | `DEMO_TENANT_ID` | no (`demo`) | tenant of `POST /v1/auth/anonymous` tokens; must not be `default` (or other reserved ids) and must never equal any real tenant id: that tenant would inherit the demo caps |
 | `ANON_TOKEN_TTL_SECONDS`, `ANON_MINT_RATE_PER_HOUR` | no (3600, 10) | anonymous token lifetime; mints per client IP per hour |
 | `ANON_USER_DAILY_USD_CAP`, `ANON_TENANT_DAILY_USD_CAP` | no (0.10, 1.0) | daily USD caps per anonymous owner and for the whole demo tenant |
+| `ANON_DATA_TTL_HOURS`, `PURGE_INTERVAL_SECONDS`, `PURGE_ON_START`, `PURGE_BATCH_SIZE` | no (24, 0, false, 200) | anonymous documents (demo tenant, `anon-` owners) older than the TTL are purged with their vectors, parents, BM25 and stored original; interval 0 = no background loop (use cron `uv run python scripts/purge_anonymous.py`); batch caps docs per run |
 | `TRUSTED_PROXY` | no (empty) | header name carrying the client IP (e.g. `X-Forwarded-For`; rightmost value used); empty = socket peer only, headers ignored. Set only behind a proxy that overwrites/appends it |
 | `DAILY_USD_CAP`, `GLOBAL_DAILY_USD_CAP` | no (1.0, 5.0) | per-user and global UTC-day spend caps, > 0 |
 | `AGENT_MAX_STEPS`, `AGENT_MAX_USD`, `SUMMARY_MAX_USD` | no | per-run bounds |

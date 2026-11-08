@@ -122,6 +122,10 @@ class IngestionService:
             parents = SqliteParents(registry.db_path)
         self._parents = parents
 
+    @property
+    def registry(self) -> Registry:
+        return self._reg
+
     def for_tenant(self, tenant_id: str) -> IngestionService:
         """Copy bound to the authenticated tenant (registry, vectors, parents, BM25 all scoped)."""
         v = copy.copy(self)

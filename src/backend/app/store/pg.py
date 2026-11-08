@@ -99,6 +99,15 @@ class PostgresRegistry:
             ).fetchall()
         return [_doc(r, self._t) for r in rows]
 
+    def list_older_than(self, owner_prefix: str, before: datetime, limit: int) -> list[Document]:
+        with self._pool.connection() as c:
+            rows = c.execute(
+                f"SELECT {_DOC_COLS} FROM documents WHERE tenant_id=%s AND left(owner_id, %s)=%s "
+                "AND created_at < %s ORDER BY created_at, doc_id LIMIT %s",
+                (self._t, len(owner_prefix), owner_prefix, before, limit),
+            ).fetchall()
+        return [_doc(r, self._t) for r in rows]
+
     def delete(self, owner_id: str, doc_id: str) -> bool:
         with self._pool.connection() as c:
             cur = c.execute(

@@ -1,3 +1,4 @@
+import asyncio
 import tracemalloc
 from contextlib import asynccontextmanager
 
@@ -99,9 +100,23 @@ async def lifespan(app: FastAPI):
             objects=state.objects,
         )
         created.append("ingestion")
+    purge_task = None
+    if settings.purge_on_start or settings.purge_interval_seconds:
+        from .services.cleanup import purge_loop, run_purge
+
+        if settings.purge_interval_seconds:
+            purge_task = asyncio.create_task(purge_loop(state, settings.purge_interval_seconds, settings))
+        else:
+            try:
+                await run_purge(state, settings)
+            except Exception as e:  # noqa: BLE001  cleanup must never block startup
+                logger.error("startup anon purge failed err=%s", type(e).__name__)
     try:
         yield
     finally:
+        if purge_task is not None:
+            purge_task.cancel()
+            await asyncio.gather(purge_task, return_exceptions=True)
         for name in created:
             setattr(state, name, None)
         reset_models()

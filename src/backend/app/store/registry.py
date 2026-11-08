@@ -98,6 +98,7 @@ class Registry(Protocol):
     def get(self, owner_id: str, doc_id: str) -> Document | None: ...
     def list_by_owner(self, owner_id: str) -> list[Document]: ...
     def delete(self, owner_id: str, doc_id: str) -> bool: ...
+    def list_older_than(self, owner_prefix: str, before: datetime, limit: int) -> list[Document]: ...
     def update_status(self, owner_id: str, doc_id: str, status: Status) -> bool: ...
     def update_pages_or_sheets(self, owner_id: str, doc_id: str, n: int) -> bool: ...
     def set_failure_reason(self, owner_id: str, doc_id: str, reason: str | None) -> bool: ...
@@ -225,6 +226,16 @@ class SqliteRegistry:
             ).fetchall()
         return [self._row(r) for r in rows]
 
+    def list_older_than(self, owner_prefix: str, before: datetime, limit: int) -> list[Document]:
+        """Oldest-first docs whose owner starts with `owner_prefix` and created before `before`."""
+        with self._conn() as c:
+            rows = c.execute(
+                f"SELECT {_COLS} FROM documents WHERE substr(owner_id,1,?)=? AND created_at<? "
+                "ORDER BY created_at, doc_id LIMIT ?",
+                (len(owner_prefix), owner_prefix, before.isoformat(), limit),
+            ).fetchall()
+        return [self._row(r) for r in rows]
+
     def delete(self, owner_id: str, doc_id: str) -> bool:
         with self._conn() as c:
             cur = c.execute(
@@ -316,6 +327,14 @@ class InMemoryRegistry:
         with self._lock:
             docs = [d.model_copy() for d in self._docs.values() if self._mine(d, owner_id)]
         return sorted(docs, key=lambda d: (d.created_at, d.doc_id))
+
+    def list_older_than(self, owner_prefix: str, before: datetime, limit: int) -> list[Document]:
+        with self._lock:
+            docs = [
+                d.model_copy() for d in self._docs.values()
+                if d.tenant_id == self._t and d.owner_id.startswith(owner_prefix) and d.created_at < before
+            ]
+        return sorted(docs, key=lambda d: (d.created_at, d.doc_id))[:limit]
 
     def delete(self, owner_id: str, doc_id: str) -> bool:
         with self._lock:
