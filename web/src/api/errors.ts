@@ -41,6 +41,9 @@ const MESSAGES: Record<string, string> = {
   parse_error: 'The file could not be read.',
   empty_document: 'No text could be extracted from the file.',
   ingest_failed: 'Processing the file failed. Please try again.',
+  doc_limit_reached: 'Document limit reached. Delete a document to upload another.',
+  storage_limit_reached:
+    'The demo storage limit is full right now. Delete a document or try again later.',
 }
 
 export function messageFor(code: string | null | undefined): string {
