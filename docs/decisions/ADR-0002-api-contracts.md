@@ -1,5 +1,5 @@
 # ADR-0002 HTTP API contracts (documents, query, agent SSE, sessions)
-Status: proposed
+Status: accepted (2026-11-09, human)
 
 ## Context
 ADR-0001 fixes the stack, layout and `llm` wrapper but not the wire contracts. T-007 (five endpoints), T-019 (agent SSE) and T-020 (sessions) need them fixed once so routers, tests and a later frontend agree. Existing facts: ingestion is `async` and returns a `Document` (status `ready|failed|processing`); `DocumentBusyError` on delete mid-ingest; failure reasons (`parse_error`, `empty_document`, `cancelled`, class name) are only logged today; `llm` raises `BudgetExceeded`, `LLMTransportError`, `LLMValidationError` (all `LLMError`); file `ParseError` lives in the legacy `utilities/file_handler` and moves with the parser.

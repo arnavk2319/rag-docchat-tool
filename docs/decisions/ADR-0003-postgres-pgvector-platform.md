@@ -1,5 +1,5 @@
 # ADR-0003 Postgres + pgvector service platform, object storage, auth, tenancy
-Status: proposed
+Status: accepted (2026-11-09, human)
 
 ## Context
 P5 turns the single-process app (embedded Chroma at `CHROMA_DIR`, SQLite at `DB_PATH`, `X-User-Id` header; see `docs/ai-design.md` line 7 and spec "Data model") into one containerised service for a web app and for service-to-service use. It needs shared durable state, original-file storage (so `query_table` works), real auth (audit B-1), multi-tenancy and a tenant spend cap. This ADR is the prerequisite for new dependencies (spec P5). It supersedes the Chroma/SQLite lines of ADR-0001/0002 for storage only; embeddings, rerank and prompts are unchanged.

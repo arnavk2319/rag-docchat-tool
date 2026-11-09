@@ -1,5 +1,5 @@
 # ADR-0001 Stack and architecture
-Status: proposed
+Status: accepted (2026-11-09, human)
 
 ## Context
 Prototype (src/backend/app) is a LangChain + HTTP Chroma + OpenAI app with a bloated requirements.txt and blocking model loads. Spec (docs/spec.md) wants local-first, cheap, cited, bounded-agent RAG. This ADR fixes the stack; nothing outside it is added without a new ADR.
