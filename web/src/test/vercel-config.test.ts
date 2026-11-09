@@ -3,12 +3,7 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import {
-  buildConfig,
-  buildCsp,
-  parseApiOrigin,
-  PLACEHOLDER_ORIGIN,
-} from '../../scripts/gen-vercel-json.mjs'
+import { buildConfig, buildCsp, parseApiOrigin } from '../../scripts/gen-vercel-json.mjs'
 
 const root = process.cwd()
 const committed = JSON.parse(readFileSync(join(root, 'vercel.json'), 'utf8')) as ReturnType<
@@ -17,9 +12,14 @@ const committed = JSON.parse(readFileSync(join(root, 'vercel.json'), 'utf8')) as
 const headerOf = (cfg: typeof committed, source: string, key: string) =>
   cfg.headers.find((h) => h.source === source)?.headers.find((h) => h.key === key)?.value
 
+// The committed file carries whichever API origin `npm run gen:vercel` last wrote (placeholder or real).
+const committedOrigin =
+  /connect-src 'self' (https?:\/\/[^\s;]+)/.exec(
+    headerOf(committed, '/(.*)', 'Content-Security-Policy') ?? '',
+  )?.[1] ?? ''
 const EXPECTED_CSP =
   "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; " +
-  "connect-src 'self' https://api.docchat.example; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+  `connect-src 'self' ${committedOrigin}; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`
 
 describe('committed vercel.json', () => {
   it('has the SPA rewrite', () => {
@@ -47,8 +47,9 @@ describe('committed vercel.json', () => {
     )
   })
 
-  it('is in sync with the generator (placeholder origin)', () => {
-    expect(committed).toEqual(buildConfig(PLACEHOLDER_ORIGIN))
+  it('is in sync with the generator (for its own origin)', () => {
+    expect(committedOrigin).not.toBe('')
+    expect(committed).toEqual(buildConfig(committedOrigin))
   })
 })
 
