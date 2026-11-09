@@ -1,4 +1,15 @@
+<!-- portfolio: section=ai-rag -->
 # DocChat RAG
+
+Chat with your own documents. Upload files and ask questions: answers are grounded in the passages retrieved from your selected documents and cite their sources, and clicking a citation shows the exact passage with the cited text highlighted. Also summarizes, runs sentiment analysis and compares documents, through a bounded LangGraph agent.
+
+**Live demo:** https://rag-docchat-tool.vercel.app
+
+![DocChat: document list, chat and a source-passage pane for citations](docs/screenshot.png)
+
+Keywords: `ai-rag` · RAG · embeddings · vector search · LangGraph · LLM · document Q&A
+
+## Backend
 
 Document-chat RAG backend: upload documents, summarize, ask with citations, compare, query tables, through a bounded LangGraph agent. Spec: [docs/spec.md](docs/spec.md). Run `uv sync`, then `uv run uvicorn app.main:app --app-dir src/backend`.
 
