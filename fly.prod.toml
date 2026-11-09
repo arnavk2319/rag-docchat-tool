@@ -1,0 +1,44 @@
+# prod app, deploys from `main` (human only, Gate B).  Deploy: fly deploy -c fly.prod.toml
+# Secrets are NOT here. Set with: fly secrets set -a docchat-prod DATABASE_URL=... AUTH_TOKEN_SECRET=... ANTHROPIC_API_KEY=...
+# Use a different AUTH_TOKEN_SECRET, database and Anthropic key per environment.
+app = "docchat-prod"
+primary_region = "iad" # change to the region nearest you
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  LLM_PROVIDER = "anthropic"
+  OBJECT_STORE = "local" # files live on the /data volume (one machine only)
+  OBJECT_STORE_PATH = "/data/objects"
+  # For S3/R2 instead: OBJECT_STORE = "s3", plus S3_ENDPOINT and S3_BUCKET here; S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY as secrets.
+  CORS_ALLOW_ORIGINS = "https://rag-docchat-tool.vercel.app"
+  ENABLE_DOCS = "false"
+  TRUSTED_PROXY = "Fly-Client-IP"
+  DEMO_TENANT_ID = "demo"
+  ANON_DATA_TTL_HOURS = "24"
+  PURGE_INTERVAL_SECONDS = "3600"
+  HF_HOME = "/data/hf"
+  DB_PATH = "/data/docchat.db"
+
+[[mounts]]
+  source = "data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = false
+  min_machines_running = 1 # run exactly ONE machine (per-process state)
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/health"
+    interval = "30s"
+    timeout = "10s"
+    grace_period = "180s" # first start downloads ~1 GB of models
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "4gb"
