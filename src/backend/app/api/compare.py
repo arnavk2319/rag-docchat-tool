@@ -1,12 +1,12 @@
 """POST /v1/compare (services/compare.py)."""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from ..core.concurrency import run_blocking
 from ..core.llm import Budget
 from ..core.security import sanitize_output
 from ..services.compare import Point, compare_docs
-from .deps import CurrentUser, ParentsDep, RegistryDep, SummarizeLease
+from .deps import CurrentUser, ParentsDep, RegistryDep, SummarizeLease, json_body_limit
 from .docintel import _cite
 from .rag import resolve_ready_docs
 from .schemas import Citation, ComparePoint, CompareRequest, CompareResponse, ErrorBody
@@ -15,7 +15,7 @@ router = APIRouter(prefix="/v1", tags=["documents"])
 _ERRORS = {c: {"model": ErrorBody} for c in (401, 404, 409, 429, 502)}
 
 
-@router.post("/compare", response_model=CompareResponse, responses=_ERRORS)
+@router.post("/compare", response_model=CompareResponse, responses=_ERRORS, dependencies=[Depends(json_body_limit)])
 async def compare(
     body: CompareRequest, user: CurrentUser, registry: RegistryDep, parents: ParentsDep,
     lease: SummarizeLease,

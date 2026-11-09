@@ -80,6 +80,15 @@ do not expose this service publicly without real auth. Limiter and ledger reserv
 deploy needs a shared store such as Redis). Failed LLM calls that return no usage are uncharged. Set a provider-side hard
 budget as the last backstop. Per-IP limiting is a backlog item (only meaningful behind a trusted proxy).
 
+## Backend hardening from the web audit (T-049)
+
+- **Upload limits (H1)**: `POST /v1/documents` is limited per `tenant:user` to `UPLOAD_RATE_PER_HOUR` (default 5) requests/hour, 429 `rate_limited` + `Retry-After`. Per-owner document cap: `anon-` owners `ANON_MAX_DOCS` (5), other owners `OWNER_MAX_DOCS` (200, 0 = off); demo tenant total stored bytes `DEMO_TENANT_MAX_BYTES` (200 MB). Rejections are per-file codes `doc_limit_reached` / `storage_limit_reached` (HTTP 200 body, ADR-0002); re-uploading bytes the owner already has is exempt. Caps are checked before ingest and are not transactional, so concurrent uploads can overshoot by a few files. `INGEST_MAX_CONCURRENT` (2): an app-wide semaphore; extra uploads wait (chosen over 429 so a burst within the rate limit still completes; the rate limit bounds the queue).
+- **Mint limits (M1)**: `POST /v1/auth/anonymous` has a per-IP bucket and a global `ANON_MINT_GLOBAL_PER_HOUR` (200) bucket (429 `global_rate_limited`), checked after the per-IP one so IP-limited requests do not drain it. See docs/deploy.md for `TRUSTED_PROXY`.
+- **No class names to clients (M3)**: unknown ingest exceptions are stored and returned as `ingest_failed`; the class is logged only. Legacy stored values outside the fixed set are mapped to `ingest_failed` on read.
+- **Headers (L1)**: `X-Content-Type-Options: nosniff` and `Cache-Control: no-store` on every `/v1` response (pure ASGI middleware, streaming untouched; a route-set `Cache-Control`, e.g. SSE `no-cache`, is kept).
+- **Body size (L2)**: `json_body_limit` (64 KB, Content-Length based) also on compare, document summary and sentiment.
+- `/ping-checkpoint` removed.
+
 ## Known gaps
 
 - Homoglyph role words (Cyrillic `\u0455ystem:`) are not folded by NFKC and are not rewritten; they stay inert DATA

@@ -13,7 +13,7 @@ Only the human (via Gate A) moves a ticket from draft to approved.
 | P3 | LangGraph agent, Ollama, SSE | T-016..T-019 | approved |
 | P4 | Sessions, injection defences, limits, golden-set evals | T-020..T-023 | approved |
 | P5 | Service platform: pgvector, object store, auth, tenancy, doc-intelligence, deploy; frontend-enabling backend T-034..T-037 | T-024..T-033, T-034..T-037 | T-024..T-033 approved; T-034..T-037 draft |
-| P6 | Frontend: Vite + React SPA in `web/`, mock-first (parallel with P5; ADR-0004) | T-038..T-047 | approved |
+| P6 | Frontend: Vite + React SPA in `web/`, mock-first (parallel with P5; ADR-0004) | T-038..T-047 | done |
 
 ## Tickets
 
@@ -59,17 +59,17 @@ P6 is mock-first: T-038..T-045 need no P5 work and can run in parallel with P5. 
 | T-035 | P5 | GET /v1/sessions list + GET /v1/sessions/{id} messages (needs_architect) | S | T-026, T-028 | approved |
 | T-036 | P5 | Anonymous document/session TTL cleanup | S | T-027, T-034 | approved |
 | T-037 | P5 | Chunk-level Citation in agent stream events (needs_architect; eval: citation validity) | M | T-032 | approved |
-| T-038 | P6 | web/ scaffold: Vite+React+TS, tooling, pinned deps, verify command (needs_architect) | M | - | approved |
-| T-039 | P6 | Typed contract, API client, token module, MSW mock handlers | L | T-038 | approved |
-| T-040 | P6 | Documents page: upload, list, delete, per-file errors | M | T-039 | approved |
-| T-041 | P6 | SSE client + Chat page: steps, tokens, citations, stop reasons, abstain | L | T-039 | approved |
-| T-042 | P6 | Sessions list and switch | S | T-041 | approved |
-| T-043 | P6 | Safe rendering, CSP + vercel.json hardening, XSS component test | M | T-040, T-041 | approved |
-| T-044 | P6 | Playwright E2E in mock mode | M | T-042, T-043 | approved |
-| T-045 | P6 | Vercel preview deploy docs | S | T-043 | approved |
-| T-046 | P6 | Summary/Sentiment/Compare views behind flag (T-030/T-031/T-032 done) | L | T-041 | approved |
-| T-048 | P5 | Cited passage endpoint GET /v1/documents/{doc_id}/chunks/{chunk_id} for the source pane (needs_architect) | S | T-037 | approved |
-| T-047 | P6 | Switch to real API: generated client, contract check, staging smoke | M | T-044, T-045, T-048 | approved |
+| T-038 | P6 | web/ scaffold: Vite+React+TS, tooling, pinned deps, verify command (needs_architect) | M | - | done |
+| T-039 | P6 | Typed contract, API client, token module, MSW mock handlers | L | T-038 | done |
+| T-040 | P6 | Documents page: upload, list, delete, per-file errors | M | T-039 | done |
+| T-041 | P6 | SSE client + Chat page: steps, tokens, citations, stop reasons, abstain | L | T-039 | done |
+| T-042 | P6 | Sessions list and switch | S | T-041 | done |
+| T-043 | P6 | Safe rendering, CSP + vercel.json hardening, XSS component test | M | T-040, T-041 | done |
+| T-044 | P6 | Playwright E2E in mock mode | M | T-042, T-043 | done |
+| T-045 | P6 | Vercel preview deploy docs | S | T-043 | done |
+| T-046 | P6 | Summary/Sentiment/Compare views behind flag (T-030/T-031/T-032 done) | L | T-041 | done |
+| T-048 | P5 | Cited passage endpoint GET /v1/documents/{doc_id}/chunks/{chunk_id} for the source pane (needs_architect) | S | T-037 | done |
+| T-047 | P6 | Switch to real API: generated client, contract check, staging smoke | M | T-044, T-045, T-048 | done |
 
 Estimated total: 25 M x $4 + 3 L x $8 + 9 S x $1.50 = $137.50 (caps, not expected spend). Previous total was $79.50; this plan adds $58.00 (P5 +4 tickets $11.00, P6 10 tickets $47.00).
 
@@ -101,3 +101,16 @@ Estimated total: 25 M x $4 + 3 L x $8 + 9 S x $1.50 = $137.50 (caps, not expecte
 - T-021 re-review approved (round 2). Nits: link-opener floods (![]( repeated) cost up to ~120 ms per 20k call, lower the _IMAGE/_LINK target cap or short-circuit when no ) exists; tools.wrap can leave a harmless partial entity after truncation; homoglyph role words and plain-language social engineering remain known gaps.
 - T-022 follow-ups: per-IP rate limit (needs a trusted proxy; the mint limit in T-034 covers `/v1/auth/anonymous` only); upload rate limit and stored-documents cap per owner; shared (Redis) limiter state for multi-worker.
 - Security audit follow-ups (docs/security-audit.md): B-1 real auth; H-1 upload limits/quotas; H-2 streaming body-size middleware; H-3 zip/parse hardening and timeouts; H-4 CORS/security headers; H-5 disable docs/trim healthz in prod; M-3 fail closed on unknown model price; L-1 tracemalloc; L-2 delete load_xls; L-4 periodic session purge; L-5 pin HF model revisions.
+- Rate-limit cheap read routes (GET /v1/documents*, GET /v1/documents/{doc_id}/chunks/{chunk_id}) per user, since only /query and /summarize are limited today (found in T-048 review).
+- Source-pane UI: chunk passages over 4000 chars are clipped server-side, so treat the highlight as possibly truncated (T-048 review nit).
+- Drop web/.npmrc legacy-peer-deps=true once openapi-typescript supports TS 6 (or pin TS 5.x); re-run npm ci and review the peer warnings it was hiding (T-039 review).
+- web auth nits (T-039 review): client.ts clear the token on 401 only if the stored token still equals the failed one (avoid double mint); token.ts read() should fall back to in-memory token when setItem threw; main.tsx catch worker.start() rejection and render anyway; reword garbled hygiene test title.
+- web chat nits (T-041 review): reducer decodes entities per token so an entity split across two tokens flickers raw until final; Composer length check is on trimmed text with no textarea maxLength; 2000-char question limit is a client constant (API documents no limit).
+- Stream events carry no session_id: T-042 must create the session explicitly (POST /v1/sessions) before the first question.
+- Sessions (T-042 review nits): aborting right after session create leaves an empty "New conversation" in the list; restored history has no citation chips (API stores only ids); no delete-conversation UI.
+- xss.test.tsx session-title positive assertion is a TODO(T-042): enable now that sessions are merged (picked up in T-044).
+- E2E mock limitation: GET /v1/sessions/:id returns 404 for sessions created during a run, so switching back shows not-found; make the mock store created sessions (T-044).
+- BACKEND (T-047 smoke): local upload of a .txt with mock LLM ended `failed`/`ingest_failed` with failure_reason "RuntimeError" (embedder unavailable without a key? undiagnosed). Diagnose before staging smoke. Also failure_reason exposes an exception class name; return a fixed code instead.
+- SECURITY (docs/security-audit-web.md): H1, M1, M3, L1, L2 and /ping-checkpoint DONE in T-049 (2026-11-09). Remaining: pip-audit; M4 only if Vercel build is not `npm run build`; M2 (single instance, spend-cap DoS) and L5 (CUDA torch, unpinned model revisions) are documented, not fixed.
+- T-049 review nits: `_check_quota` (uploads.py) is not atomic so parallel uploads can overshoot ANON_MAX_DOCS slightly; demo byte cap loads up to 100k rows per upload (use a SUM query); `json_body_limit` (deps.py) checks Content-Length only so chunked bodies skip it, and compare/summary/sentiment do not declare 413 in openapi; limiter and ingest gate are per-process (one replica).
+

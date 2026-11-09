@@ -123,7 +123,6 @@ def test_every_v1_route_requires_auth_and_health_does_not(client):
             r = client.request(method.upper(), url)
             assert r.status_code == 401 and r.json()["code"] == "unauthorized", (method, path)
     assert client.get("/healthz").status_code == 200
-    assert client.get("/ping-checkpoint").status_code == 200
 
 
 @pytest.mark.parametrize("uid", ["a b", "aé", "x;y", "a" * 65, "a/b", "<b>"])

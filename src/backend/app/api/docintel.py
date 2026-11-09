@@ -2,14 +2,14 @@
 
 from collections.abc import Awaitable, Callable, Sequence
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from ..core.concurrency import run_blocking
 from ..core.llm import Budget
 from ..core.security import sanitize_output
 from ..services.docintel import DocIntelResult, classify_doc, summarize_doc
 from ..store.parents import Parent
-from .deps import CurrentUser, ParentsDep, RegistryDep, SummarizeLease
+from .deps import CurrentUser, ParentsDep, RegistryDep, SummarizeLease, json_body_limit
 from .rag import resolve_ready_docs
 from .schemas import Citation, DocSentimentResponse, DocSummaryResponse, ErrorBody, Span
 
@@ -37,7 +37,7 @@ async def _run(
     return res, [Citation.model_validate(_cite(p, doc.filename)) for p in res.cited]
 
 
-@router.post("/documents/{doc_id}/summary", response_model=DocSummaryResponse, responses=_ERRORS)
+@router.post("/documents/{doc_id}/summary", response_model=DocSummaryResponse, responses=_ERRORS, dependencies=[Depends(json_body_limit)])
 async def document_summary(
     doc_id: str, user: CurrentUser, registry: RegistryDep, parents: ParentsDep, lease: SummarizeLease,
 ) -> DocSummaryResponse:
@@ -46,7 +46,7 @@ async def document_summary(
                               abstained=res.abstained, partial=res.partial)
 
 
-@router.post("/documents/{doc_id}/sentiment", response_model=DocSentimentResponse, responses=_ERRORS)
+@router.post("/documents/{doc_id}/sentiment", response_model=DocSentimentResponse, responses=_ERRORS, dependencies=[Depends(json_body_limit)])
 async def document_sentiment(
     doc_id: str, user: CurrentUser, registry: RegistryDep, parents: ParentsDep, lease: SummarizeLease,
 ) -> DocSentimentResponse:

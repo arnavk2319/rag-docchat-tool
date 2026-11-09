@@ -1,5 +1,5 @@
 # ADR-0002 HTTP API contracts (documents, query, agent SSE, sessions)
-Status: proposed
+Status: accepted (2026-11-09, human)
 
 ## Context
 ADR-0001 fixes the stack, layout and `llm` wrapper but not the wire contracts. T-007 (five endpoints), T-019 (agent SSE) and T-020 (sessions) need them fixed once so routers, tests and a later frontend agree. Existing facts: ingestion is `async` and returns a `Document` (status `ready|failed|processing`); `DocumentBusyError` on delete mid-ingest; failure reasons (`parse_error`, `empty_document`, `cancelled`, class name) are only logged today; `llm` raises `BudgetExceeded`, `LLMTransportError`, `LLMValidationError` (all `LLMError`); file `ParseError` lives in the legacy `utilities/file_handler` and moves with the parser.
@@ -22,7 +22,7 @@ Each item: choice | rationale.
 
 All endpoints also return 401 (section 1). Details:
 - `DocumentOut{doc_id, filename, mime, size, sha256, pages_or_sheets, status, failure_reason?, created_at}`. `Citation{doc_id, filename, chunk_id, page?:int, sheet?:str, span:{char_start,char_end}}` (one of page/sheet, or neither for docx/txt).
-- `UploadResult{filename, ok, doc_id?, status?, deduplicated, error?:{code, detail}}`. Codes: `bad_extension`, `empty_file`, `too_large`, `content_mismatch`, `bad_content_type`, `parse_error`, `empty_document`, `ingest_failed`. `deduplicated` = ingest returned an existing `ready` doc.
+- `UploadResult{filename, ok, doc_id?, status?, deduplicated, error?:{code, detail}}`. Codes: `bad_extension`, `empty_file`, `too_large`, `content_mismatch`, `bad_content_type`, `parse_error`, `empty_document`, `ingest_failed`, `doc_limit_reached`, `storage_limit_reached` (T-049; per-file, quota rejections keep HTTP 200). `deduplicated` = ingest returned an existing `ready` doc.
 - **Partial success: HTTP 200** with per-file `ok`; amended by T-008: if every file is rejected by validation the status is 413 (any `too_large`) else 415 (`bad_extension`, `content_mismatch`, `bad_content_type`) while the body keeps the per-file results; mixed batches and `empty_file` stay 200. Original rationale: (not 207, not all-or-nothing) | one bad file must not discard nine good ones; 207 is poorly supported by clients/OpenAPI. Only request-level faults are 4xx.
 - `failure_reason`: new nullable `documents.failure_reason TEXT` (registry `user_version` 2, `ALTER TABLE ADD COLUMN`, written by `_fail`; code strings only, never text) | the reason is otherwise lost after the request.
 - `doc_ids` omitted on `/query` = all of the caller's `ready` docs. Pagination now | avoids a breaking change later.

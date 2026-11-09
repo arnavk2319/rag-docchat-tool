@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 def test_business_routes_versioned():
     paths = {r.path for r in app.routes if hasattr(r, "methods")}
-    public = {"/health", "/healthz", "/ping-checkpoint", "/docs", "/redoc", "/openapi.json", "/docs/oauth2-redirect"}
+    public = {"/health", "/healthz", "/docs", "/redoc", "/openapi.json", "/docs/oauth2-redirect"}
     assert all(p.startswith("/v1/") for p in paths - public)
     c = TestClient(app)
     for old in ("/documents", "/query", "/sessions"):

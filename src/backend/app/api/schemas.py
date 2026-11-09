@@ -63,6 +63,23 @@ class Citation(BaseModel):
     span: Span
 
 
+class Highlight(BaseModel):
+    start: int
+    end: int
+
+
+class ChunkPassage(BaseModel):
+    """Parent passage text (data, never markup) with the cited chunk's offsets inside it."""
+
+    doc_id: str
+    chunk_id: str
+    filename: str
+    page: int | None = None
+    sheet: str | None = None
+    text: str
+    highlight: Highlight
+
+
 class QueryRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
     doc_ids: list[str] | None = Field(default=None, min_length=1, max_length=20)

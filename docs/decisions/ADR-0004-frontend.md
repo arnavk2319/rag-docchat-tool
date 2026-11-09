@@ -1,5 +1,5 @@
 # ADR-0004 Frontend (P6): Vite + React + TS static SPA
-Status: proposed
+Status: accepted (2026-11-09, human)
 
 ## Context
 Spec P6: portfolio-grade, static, Vercel-hosted app; no login; anonymous bearer token per visitor from `POST /v1/auth/anonymous`; streamed agent steps + citations over SSE; talks only to `/v1`. P5 is in flight (T-028 rewrites auth, T-032 publishes `docs/openapi.json` + CORS), so auth must be isolated and the contract hand-typed first. Today's stream citations are doc-level `{doc_id, filename, span:str}`; non-stream are chunk-level `Citation`. Errors are `{detail, code}`; 429 codes `rate_limited|spend_cap_exceeded|budget_exceeded`.

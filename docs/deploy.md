@@ -62,6 +62,11 @@ Secrets are set in the platform secret store, never in the repo or image. Human 
 | `ANON_TOKEN_TTL_SECONDS`, `ANON_MINT_RATE_PER_HOUR` | no (3600, 10) | anonymous token lifetime; mints per client IP per hour |
 | `ANON_USER_DAILY_USD_CAP`, `ANON_TENANT_DAILY_USD_CAP` | no (0.10, 1.0) | daily USD caps per anonymous owner and for the whole demo tenant |
 | `ANON_DATA_TTL_HOURS`, `PURGE_INTERVAL_SECONDS`, `PURGE_ON_START`, `PURGE_BATCH_SIZE` | no (24, 0, false, 200) | anonymous documents (demo tenant, `anon-` owners) older than the TTL are purged with their vectors, parents, BM25 and stored original; interval 0 = no background loop (use cron `uv run python scripts/purge_anonymous.py`); batch caps docs per run |
+| `ANON_MINT_GLOBAL_PER_HOUR` | no (200) | global per-hour cap on `POST /v1/auth/anonymous` across all IPs (429 `global_rate_limited`), on top of the per-IP cap |
+| `UPLOAD_RATE_PER_HOUR` | no (5) | `POST /v1/documents` requests per `tenant:user` per hour (429 `rate_limited` + `Retry-After`) |
+| `ANON_MAX_DOCS`, `OWNER_MAX_DOCS` | no (5, 200) | documents one `anon-` owner / any other owner may hold; over it the file is rejected `doc_limit_reached`; `OWNER_MAX_DOCS=0` = unlimited |
+| `DEMO_TENANT_MAX_BYTES` | no (209715200) | total stored bytes in the demo tenant; over it the file is rejected `storage_limit_reached` |
+| `INGEST_MAX_CONCURRENT` | no (2) | ingests running at once per process; extra uploads wait (not 429) |
 | `TRUSTED_PROXY` | no (empty) | header name carrying the client IP (e.g. `X-Forwarded-For`; rightmost value used); empty = socket peer only, headers ignored. Set only behind a proxy that overwrites/appends it |
 | `DAILY_USD_CAP`, `GLOBAL_DAILY_USD_CAP` | no (1.0, 5.0) | per-user and global UTC-day spend caps, > 0 |
 | `AGENT_MAX_STEPS`, `AGENT_MAX_USD`, `SUMMARY_MAX_USD` | no | per-run bounds |
@@ -90,6 +95,7 @@ DATABASE_URL=<staging dsn> uv run python -m app.db.migrate
 
 - Request body limit: set the proxy cap (nginx `client_max_body_size 55m;`, or platform equivalent) just above the 50 MB multipart total. Starlette spools multipart bodies before the app's 10 MB per-file check, so the proxy is the first line of defence (backlog H-2).
 - SSE: disable response buffering for the streaming routes (nginx `proxy_buffering off; proxy_read_timeout 300s;` plus `proxy_http_version 1.1; proxy_set_header Connection "";`; the app already sends `X-Accel-Buffering: no` where supported). Do not enable gzip on `text/event-stream`.
+- `TRUSTED_PROXY` (client-IP header for the per-IP anonymous-mint limit): set it to the single header your proxy sets, e.g. `X-Forwarded-For`. Exactly ONE trusted hop: the app uses the rightmost value, i.e. the entry appended by your own proxy. With zero proxies leave it empty (a client could otherwise choose its own IP); with two chained proxies the rightmost value is the inner proxy, not the client. The origin must NOT be publicly reachable (firewall/private network so only the proxy can connect), otherwise a client can append its own header and rotate IPs. Even then `ANON_MINT_GLOBAL_PER_HOUR` bounds total mints.
 - Run uvicorn behind the proxy with `--proxy-headers` (already in CMD); restrict `--forwarded-allow-ips` to the proxy if it is not the platform default.
 
 ## Multi-replica caveats: run ONE replica

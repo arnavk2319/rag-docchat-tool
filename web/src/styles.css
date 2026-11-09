@@ -1,0 +1,49 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/dm-sans';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/600.css';
+
+/* Tokens from docs/design/prototype.html (light only). */
+@theme {
+  --color-bg: #eceeec;
+  --color-panel: #ffffff;
+  --color-side: #f3f4f2;
+  --color-line: #dcdedb;
+  --color-line-soft: #eceeeb;
+  --color-text: #1f2523;
+  --color-muted: #5f6764;
+  --color-faint: #8a928f;
+  --color-primary: #0f766e;
+  --color-primary-ink: #ffffff;
+  --color-primary-soft: #e3f1ee;
+  --color-primary-text: #0b5d57;
+  --color-link: #2f6fe4;
+  --color-link-soft: #e6eefc;
+  --color-mark: #ffe9a8;
+  --color-warn: #8a5a00;
+  --color-warn-soft: #fdf0d8;
+  --color-ok: #0b5d57;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --font-sans: 'DM Sans Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-link);
+  outline-offset: 2px;
+}
