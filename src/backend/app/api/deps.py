@@ -6,6 +6,7 @@ Routers never read headers themselves. Tests use
 `app.dependency_overrides[current_principal]` and may override the service getters.
 """
 
+import asyncio
 from typing import Annotated, NewType
 
 from fastapi import Depends, Header, HTTPException, Request, Response
@@ -157,6 +158,31 @@ def get_global_limiter(request: Request) -> RateLimiter:
     if getattr(st, "global_limiter", None) is None:
         st.global_limiter = RateLimiter(get_settings().global_rate_limit_per_min, max_users=1)
     return st.global_limiter
+
+
+def get_upload_limiter(request: Request) -> RateLimiter:
+    st = request.app.state
+    if getattr(st, "upload_limiter", None) is None:
+        st.upload_limiter = RateLimiter(get_settings().upload_rate_per_hour, window_s=3600.0)
+    return st.upload_limiter
+
+
+def upload_rate_limit(
+    user: CurrentUser, tenant: CurrentTenant,
+    limiter: Annotated[RateLimiter, Depends(get_upload_limiter)],
+) -> None:
+    """One slot per POST /v1/documents request, keyed tenant:user (same id in two tenants = two)."""
+    d = limiter.hit(f"{tenant}:{user}")
+    if not d.allowed:
+        raise ApiError(429, "rate_limited", "Too many uploads; retry later", d.headers())
+
+
+def get_ingest_gate(request: Request) -> asyncio.Semaphore:
+    """App-wide cap on concurrently running ingests; extra uploads wait their turn."""
+    st = request.app.state
+    if getattr(st, "ingest_gate", None) is None:
+        st.ingest_gate = asyncio.Semaphore(get_settings().ingest_max_concurrent)
+    return st.ingest_gate
 
 
 def demo_caps(s) -> dict[str, tuple[float, float]]:

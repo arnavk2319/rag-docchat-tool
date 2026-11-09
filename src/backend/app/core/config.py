@@ -69,6 +69,13 @@ class Settings(BaseSettings):
     anon_tenant_daily_usd_cap: float = Field(default=1.0, gt=0)  # env ANON_TENANT_DAILY_USD_CAP whole demo tenant
     trusted_proxy: str = ""  # env TRUSTED_PROXY: header carrying the client IP (e.g. X-Forwarded-For); empty = ignore headers
 
+    anon_mint_global_per_hour: int = Field(default=200, gt=0)  # env ANON_MINT_GLOBAL_PER_HOUR; all IPs together
+    upload_rate_per_hour: int = Field(default=5, gt=0)  # env UPLOAD_RATE_PER_HOUR; POST /v1/documents requests per tenant:user
+    anon_max_docs: int = Field(default=5, gt=0)  # env ANON_MAX_DOCS; documents one anon- owner may hold
+    owner_max_docs: int = Field(default=200, ge=0)  # env OWNER_MAX_DOCS; documents any other owner may hold, 0 = unlimited
+    demo_tenant_max_bytes: int = Field(default=200 * 1024 * 1024, gt=0)  # env DEMO_TENANT_MAX_BYTES; stored bytes, demo tenant
+    ingest_max_concurrent: int = Field(default=2, gt=0)  # env INGEST_MAX_CONCURRENT; ingests running at once (extra requests wait)
+
     anon_data_ttl_hours: float = Field(default=24.0, gt=0)  # env ANON_DATA_TTL_HOURS; anonymous docs older than this are purged
     purge_interval_seconds: int = Field(default=0, ge=0)  # env PURGE_INTERVAL_SECONDS; background purge loop, 0 = off
     purge_on_start: bool = False  # env PURGE_ON_START; one purge pass at startup

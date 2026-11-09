@@ -43,6 +43,12 @@ class StubRegistry:
     def get_by_sha256(self, owner_id, sha):
         return None
 
+    def list_by_owner(self, owner_id):
+        return []
+
+    def list_older_than(self, prefix, before, limit):
+        return []
+
 
 def make_client(stub: StubIngestion) -> TestClient:
     from app.api.deps import get_ingestion, get_registry

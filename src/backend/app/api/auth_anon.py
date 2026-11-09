@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 from ..core.auth import mint_token
 from ..core.config import get_settings
-from ..core.limits import RateLimiter
+from ..core.limits import GLOBAL_KEY, RateLimiter
 from .deps import ApiError
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
@@ -61,13 +61,28 @@ def get_anon_limiter(request: Request) -> RateLimiter:
     return st.anon_limiter
 
 
+def get_anon_global_limiter(request: Request) -> RateLimiter:
+    st = request.app.state
+    if getattr(st, "anon_global_limiter", None) is None:
+        st.anon_global_limiter = RateLimiter(
+            get_settings().anon_mint_global_per_hour, window_s=ANON_WINDOW_S, max_users=1
+        )
+    return st.anon_global_limiter
+
+
 @router.post("/anonymous", response_model=AnonymousToken)
 def mint_anonymous(
-    request: Request, limiter: Annotated[RateLimiter, Depends(get_anon_limiter)]
+    request: Request, limiter: Annotated[RateLimiter, Depends(get_anon_limiter)],
+    glimiter: Annotated[RateLimiter, Depends(get_anon_global_limiter)],
 ) -> AnonymousToken:
     d = limiter.hit(client_ip(request))
     if not d.allowed:
         raise ApiError(429, "rate_limited", "Too many tokens requested; retry later", d.headers())
+    g = glimiter.hit(GLOBAL_KEY)  # after the per-IP check: IP-limited requests do not drain it
+    if not g.allowed:
+        raise ApiError(
+            429, "global_rate_limited", "Service is busy; retry later", g.headers()
+        )
     s = get_settings()
     now = int(time.time())
     token = mint_token(

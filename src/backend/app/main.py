@@ -11,6 +11,7 @@ from .api.deps import ApiError, demo_caps
 from .api.errors import http_error, install_error_handlers
 from .core.concurrency import run_blocking
 from .core.config import cors_origins, get_settings
+from .core.headers import V1SecurityHeaders
 from .core.limits import RateLimiter, SpendLedger
 from .core.llm import validate_provider
 from .core.models import load_models, models_fake, models_loaded, reset_models
@@ -159,6 +160,7 @@ def create_app() -> FastAPI:
             allow_headers=["Authorization", "Content-Type"], max_age=600,
             expose_headers=["Retry-After"],
         )
+    application.add_middleware(V1SecurityHeaders)
     application.include_router(documents.router)
     application.include_router(summarize.router)
     application.include_router(docintel.router)
@@ -177,11 +179,6 @@ def create_app() -> FastAPI:
         if not get_settings().enable_docs:  # H-5: no internals in prod
             return {"status": "ok"}
         return {"models_loaded": models_loaded(), "fake": models_fake()}
-
-    @application.get("/ping-checkpoint", tags=["health"], include_in_schema=False)
-    def ping_checkpoint():
-        logger.info("Checking endpoint status")
-        return "Returning OK 200"
 
     return application
 

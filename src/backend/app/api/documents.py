@@ -1,12 +1,23 @@
 """Document endpoints: upload (multi-file), list, get, delete."""
 
+import asyncio
 from typing import Annotated
 
-from fastapi import APIRouter, File, Query, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile
 
 from ..core.concurrency import run_blocking
 from ..store.registry import Document
-from .deps import ApiError, CurrentUser, IngestionDep, ParentsDep, RegistryDep, StoreDep
+from .deps import (
+    ApiError,
+    CurrentTenant,
+    CurrentUser,
+    IngestionDep,
+    ParentsDep,
+    RegistryDep,
+    StoreDep,
+    get_ingest_gate,
+    upload_rate_limit,
+)
 from .schemas import (
     ChunkPassage,
     DocumentList,
@@ -15,7 +26,7 @@ from .schemas import (
     Highlight,
     UploadResponse,
 )
-from .uploads import RequestTooLarge, process_upload
+from .uploads import RequestTooLarge, process_upload, safe_reason
 
 router = APIRouter(prefix="/v1/documents", tags=["documents"])
 
@@ -26,13 +37,19 @@ _ERRORS = {401: {"model": ErrorBody}, 404: {"model": ErrorBody}}
 
 
 def to_out(d: Document) -> DocumentOut:
-    return DocumentOut(**d.model_dump(exclude={"owner_id"}))
+    out = DocumentOut(**d.model_dump(exclude={"owner_id"}))
+    out.failure_reason = safe_reason(out.failure_reason)  # legacy rows may hold a class name
+    return out
 
 
 @router.post(
     "",
     response_model=UploadResponse,
-    responses={400: {"model": ErrorBody}, 401: {"model": ErrorBody}, 413: {"model": ErrorBody}},
+    dependencies=[Depends(upload_rate_limit)],
+    responses={
+        400: {"model": ErrorBody}, 401: {"model": ErrorBody}, 413: {"model": ErrorBody},
+        429: {"model": ErrorBody},
+    },
 )
 async def upload_documents(
     request: Request,
@@ -40,6 +57,8 @@ async def upload_documents(
     user: CurrentUser,
     ingestion: IngestionDep,
     registry: RegistryDep,
+    tenant: CurrentTenant,
+    gate: Annotated[asyncio.Semaphore, Depends(get_ingest_gate)],
     files: Annotated[list[UploadFile] | None, File()] = None,
 ) -> UploadResponse:
     """Always 200 with one result per file; only request-level faults are 4xx."""
@@ -55,7 +74,8 @@ async def upload_documents(
     for f in files:
         try:
             res, n = await process_upload(
-                f, user, ingestion, registry, MAX_REQUEST_BYTES - total
+                f, user, ingestion, registry, MAX_REQUEST_BYTES - total,
+                tenant=tenant, gate=gate,
             )
         except RequestTooLarge:
             raise ApiError(413, "too_large", "Request is too large") from None

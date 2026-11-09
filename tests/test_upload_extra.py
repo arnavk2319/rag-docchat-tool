@@ -31,11 +31,6 @@ def leftovers(d: Path) -> list[Path]:
     return list(d.iterdir())
 
 
-def test_ping():
-    from app.main import app
-    from fastapi.testclient import TestClient
-
-    assert TestClient(app).get("/ping-checkpoint").status_code == 200
 
 
 def test_temp_removed_on_success(client, tmpdir_used, stub):

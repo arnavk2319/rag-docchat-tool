@@ -15,9 +15,9 @@ Every `/v1` route requires header `X-User-Id` (becomes `owner_id`). Missing or b
 | DELETE /v1/documents/{doc_id} | 204; 404 unknown/foreign (never 403); 409 `document_busy` while ingesting |
 | POST /v1/summarize | `{doc_id}` xor `{doc_ids}` (else 422) -> `{summary, doc_ids}`; `fast` role, single shot over the document's stored parent texts in document order (`SqliteParents.list_doc_parents`: page, sheet, char_start; capped at 24000 chars total, truncation noted in the prompt); 404 unknown/foreign, 409 `not_ready` |
 | POST /v1/query | `{question, doc_ids?, top_k?=5, session_id?, stream?}` -> `{answer, citations[], abstained, session_id?}`; dense retrieval over child chunks, owner-filtered; the prompt gets the deduplicated parent texts (best child first), citations point at the best child chunk (`<doc>:<p>:<c>`); `agent` role |
-Unversioned: `GET /healthz`, `GET /ping-checkpoint`, `/openapi.json`.
+Unversioned: `GET /healthz`, `/openapi.json`.
 
-Per-file upload error codes: `bad_extension`, `empty_file`, `too_large`, `content_mismatch`, `bad_content_type`, `parse_error`, `empty_document`, `ingest_failed`. `deduplicated` is true when the same bytes were already `ready` for this user.
+Per-file upload error codes: `bad_extension`, `empty_file`, `too_large`, `content_mismatch`, `bad_content_type`, `parse_error`, `empty_document`, `ingest_failed`, `doc_limit_reached` (anon owner / owner document cap), `storage_limit_reached` (demo tenant byte cap). `deduplicated` is true when the same bytes were already `ready` for this user.
 
 Citation: `{doc_id, filename, chunk_id, page?, sheet?, span{char_start,char_end}}`, built from the retrieved chunks' metadata; filename comes from the registry.
 

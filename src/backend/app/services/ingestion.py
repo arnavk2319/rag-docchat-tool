@@ -218,7 +218,8 @@ class IngestionService:
             elif isinstance(e, asyncio.CancelledError):
                 reason = "cancelled"
             else:
-                reason = type(e).__name__
+                reason = "ingest_failed"  # never the raw class name (leaks internals); logged below
+                log.error("ingest unexpected error doc=%s err=%s", doc.doc_id, type(e).__name__)
             await self._fail(doc, reason)
             if not isinstance(e, Exception):
                 raise
