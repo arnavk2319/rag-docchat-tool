@@ -25,6 +25,8 @@ export interface AssistantMsg {
   status: AssistantStatus
   trace: TraceItem[]
   answer: string
+  /** Undecoded streamed text; `answer` is derived from it so split entities decode correctly. */
+  raw?: string
   citations: Citation[]
   stoppedReason?: StoppedReason
   abstained?: boolean
@@ -149,7 +151,12 @@ export function reducer(s: ChatState, a: Action): ChatState {
       if (t) return updateLast(s, (m) => ({ ...m, trace: [...m.trace, t] }))
       switch (e.event) {
         case 'token':
-          return updateLast(s, (m) => ({ ...m, answer: m.answer + decodeEntities(e.text) }))
+          return updateLast(s, (m) => {
+            const raw = (m.raw ?? m.answer) + e.text
+            // Hold back a trailing, still-incomplete entity (e.g. "&am") until it completes.
+            const shown = raw.replace(/&#?\w{0,8}$/, '')
+            return { ...m, raw, answer: decodeEntities(shown) }
+          })
         case 'citations':
           return updateLast(s, (m) => ({ ...m, citations: e.citations.map(dec) }))
         case 'error':

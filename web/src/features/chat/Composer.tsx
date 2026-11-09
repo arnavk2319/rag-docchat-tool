@@ -50,6 +50,7 @@ export default function Composer({
         <textarea
           aria-label="Your question"
           rows={1}
+          maxLength={MAX_QUESTION * 2} // guards huge pastes; the 2000 check below still explains the limit
           className="max-h-[120px] flex-1 resize-none border-0 bg-transparent py-1.5 text-text outline-0 placeholder:text-faint"
           placeholder={placeholder}
           value={text}

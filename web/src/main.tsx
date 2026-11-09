@@ -8,7 +8,11 @@ async function enableMocks(): Promise<void> {
   // Statically replaced at build: with VITE_MOCK unset this branch (and msw) is dropped.
   if (import.meta.env.VITE_MOCK === '1') {
     const { worker } = await import('./mocks/browser')
-    await worker.start()
+    try {
+      await worker.start()
+    } catch {
+      // mocks failed to start: render the app anyway (requests will hit the network)
+    }
   }
 }
 

@@ -33,7 +33,7 @@ describe('source hygiene', () => {
     expect(bad).toEqual([])
   })
 
-  it('only auth/token.ts and api/client.ts-free files touch the storage key', () => {
+  it('only auth/token.ts touches the storage key', () => {
     const holders = files(SRC)
       .map((p) => relative(SRC, p))
       .filter((r) => r !== 'api/schema.d.ts' && !r.endsWith('.test.ts') && !r.startsWith('mocks/'))

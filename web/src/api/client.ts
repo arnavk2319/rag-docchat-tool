@@ -1,16 +1,17 @@
 import createClient from 'openapi-fetch'
-import { authHeaders, clearToken, refreshToken } from '../auth/token'
+import { authHeaders, clearToken, getToken } from '../auth/token'
 import type { paths } from './schema'
 import { ApiError, apiErrorFrom, codeFromBody } from './errors'
 import { apiBase } from './config'
 
 const REMINT_CODES = new Set(['token_expired', 'invalid_token'])
 
-async function send(req: Request): Promise<Response> {
+async function send(req: Request): Promise<{ res: Response; auth: string }> {
   const attempt = req.clone()
-  for (const [k, v] of Object.entries(await authHeaders())) attempt.headers.set(k, v)
+  const headers = await authHeaders()
+  for (const [k, v] of Object.entries(headers)) attempt.headers.set(k, v)
   try {
-    return await fetch(attempt)
+    return { res: await fetch(attempt), auth: Object.values(headers)[0] ?? '' }
   } catch {
     throw new ApiError(0, 'network_error')
   }
@@ -21,7 +22,7 @@ async function send(req: Request): Promise<Response> {
  * a second 401 throws `auth_failed`. Safe to use for the SSE start (before the first byte only).
  */
 export async function authedFetch(req: Request): Promise<Response> {
-  const res = await send(req)
+  const { res, auth } = await send(req)
   if (res.status !== 401) return res
   const code = codeFromBody(
     await res
@@ -30,9 +31,9 @@ export async function authedFetch(req: Request): Promise<Response> {
       .catch(() => null),
   )
   if (!code || !REMINT_CODES.has(code)) return res
-  clearToken()
-  await refreshToken()
-  const retry = await send(req)
+  clearToken(auth) // no-op if another request already re-minted
+  await getToken()
+  const { res: retry } = await send(req)
   if (retry.status === 401) throw new ApiError(401, 'auth_failed')
   return retry
 }

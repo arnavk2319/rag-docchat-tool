@@ -28,7 +28,7 @@ function read(): Stored | null {
     return memory
   }
   try {
-    if (!raw) return null
+    if (!raw) return memory
     const v: unknown = JSON.parse(raw)
     if (
       typeof v === 'object' &&
@@ -86,7 +86,15 @@ export async function getToken(): Promise<string> {
   return refreshToken()
 }
 
-export function clearToken(): void {
+/**
+ * Drops the stored token. With `failedHeader` (the `Bearer …` value that got a 401) it only
+ * clears when that is still the stored token, so a concurrent re-mint is not discarded.
+ */
+export function clearToken(failedHeader?: string): void {
+  if (failedHeader !== undefined) {
+    const cur = read()
+    if (cur && `Bearer ${cur.access_token}` !== failedHeader) return
+  }
   memory = null
   try {
     sessionStorage.removeItem(STORAGE_KEY)
