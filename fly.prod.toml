@@ -1,7 +1,7 @@
 # prod app, deploys from `main` (human only, Gate B).  Deploy: fly deploy -c fly.prod.toml
 # Secrets are NOT here. Set with: fly secrets set -a docchat-prod DATABASE_URL=... AUTH_TOKEN_SECRET=... ANTHROPIC_API_KEY=...
 # Use a different AUTH_TOKEN_SECRET, database and Anthropic key per environment.
-app = "docchat-prod"
+app = "rag-docchat-tool"
 primary_region = "iad" # change to the region nearest you
 
 [build]

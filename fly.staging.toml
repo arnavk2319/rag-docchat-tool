@@ -1,7 +1,7 @@
 # staging app, deploys from `dev`.  Deploy: fly deploy -c fly.staging.toml
 # Secrets are NOT here. Set with: fly secrets set -a docchat-staging DATABASE_URL=... AUTH_TOKEN_SECRET=... ANTHROPIC_API_KEY=...
 # Use a different AUTH_TOKEN_SECRET, database and Anthropic key per environment.
-app = "docchat-staging"
+app = "rag-docchat-staging"
 primary_region = "iad" # change to the region nearest you
 
 [build]
